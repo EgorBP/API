@@ -17,7 +17,7 @@ class Gif(Base):
     __tablename__ = 'gifs'
 
     id = Column(Integer, primary_key=True)
-    gif_id = Column(String(255), unique=True, nullable=False)
+    tg_gif_id = Column(String(255), unique=True, nullable=False)
 
 
 class Tag(Base):

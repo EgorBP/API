@@ -1,0 +1,51 @@
+from pydantic import BaseModel
+
+
+# ===== Пользователь =====
+class UserBase(BaseModel):
+    tg_id: int
+
+class UserCreate(UserBase):
+    pass
+
+class UserOut(UserBase):
+    id: int
+    gif_count: int
+
+    class Config:
+        orm_mode = True
+
+
+# ===== Гифка =====
+class GifBase(BaseModel):
+    tg_gif_id: str
+
+class GifCreate(GifBase):
+    pass
+
+class GifOut(GifBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
+# ===== Тег =====
+class TagBase(BaseModel):
+    tag: str
+
+class TagCreate(TagBase):
+    pass
+
+class TagOut(TagBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
+# ===== Связь юзер-гифка-тег =====
+class UserGifTagBase(BaseModel):
+    user_id: int
+    gif_id: int
+    tag_id: int
