@@ -12,9 +12,9 @@ class UserOut(UserBase):
     id: int
     gif_count: int
 
-    class Config:
-        orm_mode = True
-
+    model_config = {
+        "from_attributes": True
+    }
 
 # ===== Гифка =====
 class GifBase(BaseModel):
@@ -26,9 +26,9 @@ class GifCreate(GifBase):
 class GifOut(GifBase):
     id: int
 
-    class Config:
-        orm_mode = True
-
+    model_config = {
+        "from_attributes": True
+    }
 
 # ===== Тег =====
 class TagBase(BaseModel):
@@ -40,9 +40,9 @@ class TagCreate(TagBase):
 class TagOut(TagBase):
     id: int
 
-    class Config:
-        orm_mode = True
-
+    model_config = {
+        "from_attributes": True
+    }
 
 # ===== Связь юзер-гифка-тег =====
 class UserGifTagBase(BaseModel):
