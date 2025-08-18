@@ -1,1 +1,1 @@
-from .users import crate_user, get_users
+from .users import create_user, get_users
