@@ -1,0 +1,1 @@
+from .user_services import get_user_gifs_with_tags
