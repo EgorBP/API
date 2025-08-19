@@ -47,8 +47,8 @@ def get_instances(
                 values = (values,)
 
             for value in values:
-                if not isinstance(value, type(column)):
-                    raise ValueError(f'Значением колонки {column} должен быть класс {type(column)},'
+                if not isinstance(value, column.type.python_type):
+                    raise ValueError(f'Значением колонки {column} должен быть класс {column.type.python_type},'
                                      f' а не {type(value)} ({value}).')
 
             query = query.filter(column.in_(values))
@@ -94,8 +94,8 @@ def delete_instances(
             values = (values,)
 
         for value in values:
-            if not isinstance(value, type(column)):
-                raise ValueError(f'Значением колонки {column} должен быть класс {type(column)},'
+            if not isinstance(value, column.type.python_type):
+                raise ValueError(f'Значением колонки {column} должен быть класс {column.type.python_type},'
                                  f' а не {type(value)} ({value}).')
 
         query = query.filter(column.in_(values))
