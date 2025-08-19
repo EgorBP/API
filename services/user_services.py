@@ -1,13 +1,15 @@
 from sqlalchemy.orm import Session
 from models import UserGifTag, User, Gif, Tag
 from crud import create_gif, create_tag, create_user, create_user_gif_tag, delete_instances, get_instances
+from typing import Sequence
 
 
 def get_user_gifs_with_tags(
         session: Session,
         user_id: int | None = None,
         tg_id: int | None = None,
-        tg_gifs_id: list[str] | str = None,
+        tg_gifs_id: Sequence[str] | str = None,
+        tags: Sequence[str] | str = None,
 ):
     """
     Возвращает гифки пользователя с тегами в виде вложенного словаря.
@@ -32,6 +34,7 @@ def get_user_gifs_with_tags(
     :param user_id: внутренний ID пользователя (опционально).
     :param tg_id: Telegram ID пользователя (опционально).
     :param tg_gifs_id: Telegram ID гифок, которые нужно верунть, без него вернет все (опционально).
+    :param tags: вернет только те гифки, в которых был хотя бы 1 из тегов или вхождение тега в тег (опционально).
     :return: словарь с данными пользователя, гифок и тегов в формате,
         описанном выше или None если пользователь не найден.
     """
@@ -40,6 +43,9 @@ def get_user_gifs_with_tags(
 
     if isinstance(tg_gifs_id, str):
         tg_gifs_id = (tg_gifs_id, )
+
+    if isinstance(tags, str):
+        tags = (tags, )
 
     query = (
         session.query(UserGifTag.user_id, UserGifTag.gif_id, User.tg_id, Gif.tg_gif_id, Tag.tag)
@@ -53,15 +59,16 @@ def get_user_gifs_with_tags(
     elif tg_id:
         query = query.filter(User.tg_id == tg_id)
 
-    if not query.first():
+    first_row = query.first()
+    if not first_row:
         return None
 
     if not user_id:
-        user_id = query.first().user_id
+        user_id = first_row.user_id
 
     result = {
         'user_id': user_id,
-        'tg_id': query.first().tg_id,
+        'tg_id': first_row.tg_id,
         'gifs_data': []
     }
 
@@ -83,6 +90,25 @@ def get_user_gifs_with_tags(
                     'tags': [row.tag]
                 })
 
+    if tags:
+        i = 0
+        while i < len(gifs_data):
+            stop = False
+            for data_tag in gifs_data[i]['tags']:
+                # print(data_tag)
+                for tag in tags:
+                    # print(tag)
+                    if tag in data_tag:
+                        stop = True
+                        break
+                if stop:
+                    break
+            if not stop:
+                gifs_data.remove(gifs_data[i])
+                i -= 1
+            else:
+                i += 1
+
     result['gifs_data'] = gifs_data
 
     return result
@@ -90,9 +116,9 @@ def get_user_gifs_with_tags(
 
 def set_new_user_tags_on_gif(
         session: Session,
-        tg_user_id,
+        tg_user_id: int,
         tg_gif_id: str,
-        tags: list[str] | str,
+        tags: Sequence[str] | str,
 ):
     """
     Добавляет (или обновляет) связь между пользователем, гифкой и её тегами.
@@ -109,8 +135,8 @@ def set_new_user_tags_on_gif(
     :param tags: один тег или список тегов, которые будут связаны с гифкой.
     :return: None (изменения фиксируются в базе данных через session).
     """
-    if isinstance(tags, str):
-        tags = (tags, )
+    if isinstance(tags, (str, tuple)):
+        tags = [tags]
 
     old_data = get_user_gifs_with_tags(session, tg_id=tg_user_id, tg_gifs_id=tg_gif_id)
 

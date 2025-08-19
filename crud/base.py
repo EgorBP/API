@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from utils import is_valid_column_for_model, get_all_columns
+from typing import Sequence
 
 """
 Так как функции создания могут принимать различное количество параметров различных типов
@@ -13,8 +14,8 @@ from utils import is_valid_column_for_model, get_all_columns
 def get_instances(
         session: Session,
         model: type,
-        columns: list[InstrumentedAttribute] | InstrumentedAttribute | None = None,
-        filters: dict[InstrumentedAttribute, list | tuple | int] | None = None
+        columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute | None = None,
+        filters: dict[InstrumentedAttribute, Sequence[int] | int] | None = None
 ):
     """
     Универсальная функция получения записей с фильтрацией по колонкам.
@@ -59,7 +60,7 @@ def get_instances(
 def delete_instances(
         session: Session,
         model: type,
-        filters: dict[InstrumentedAttribute, list | tuple | int | str] | None = None,
+        filters: dict[InstrumentedAttribute, Sequence[int | str] | int | str] | None = None,
         instance_id: int | None = None
 ) -> int | bool:
     """
