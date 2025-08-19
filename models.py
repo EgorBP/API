@@ -10,7 +10,6 @@ class User(Base):
 
     id = Column(Integer, primary_key=True)
     tg_id = Column(BigInteger, unique=True, index=True, nullable=False)
-    gif_count = Column(Integer, default=0, nullable=False)
 
 
 class Gif(Base):
