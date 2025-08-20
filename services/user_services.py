@@ -79,7 +79,7 @@ def get_user_gifs_with_tags(
         user_id = first_row.user_id
 
     result = {
-        'user_id': user_id,
+        'id': user_id,
         'tg_id': first_row.tg_id,
         'gifs_data': []
     }
@@ -90,14 +90,14 @@ def get_user_gifs_with_tags(
         if (tg_gifs_id and row.tg_gif_id in tg_gifs_id) or not tg_gifs_id:
             # Пытаемся получить индекс того словаря в котором есть гифка, если такого нету создаем новый
             try:
-                index = [row.gif_id == data['gif_id'] for data in gifs_data].index(True)
+                index = [row.gif_id == data['id'] for data in gifs_data].index(True)
             except ValueError:
                 index = -1
             if index >= 0:
                 gifs_data[index]['tags'].append(row.tag)
             else:
                 gifs_data.append({
-                    'gif_id': row.gif_id,
+                    'id': row.gif_id,
                     'tg_gif_id': row.tg_gif_id,
                     'tags': [row.tag]
                 })
@@ -106,20 +106,19 @@ def get_user_gifs_with_tags(
         i = 0
         while i < len(gifs_data):
             stop = False
-            for data_tag in gifs_data[i]['tags']:
-                # print(data_tag)
-                for tag in tags:
-                    # print(tag)
-                    if tag in data_tag:
-                        stop = True
-                        break
-                if stop:
+            # print(i, len(gifs_data))
+            for tag in tags:
+                stop = any(tag in data_tag for data_tag in gifs_data[i]['tags'])
+                if not stop:
+                    gifs_data.remove(gifs_data[i])
+                    i -= 1
                     break
-            if not stop:
-                gifs_data.remove(gifs_data[i])
-                i -= 1
-            else:
-                i += 1
+            # for data_tag in gifs_data[i]['tags']:
+            #     # print(data_tag)
+            #     stop = any(tag in data_tag for tag in tags)
+            #     if stop:
+            #         break
+            i += 1
 
     result['gifs_data'] = gifs_data
 

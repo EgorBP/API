@@ -1,11 +1,8 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI
+from routers import user, search
 
 
 app = FastAPI()
 
 
-@app.get('/')
-def hello_word():
-    return {'Hello': 'World'}
-
-
+app.include_router(search.router)

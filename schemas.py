@@ -33,10 +33,6 @@ class GifOut(GifBase):
 
 
 # ===== Поиск по тегам =====
-class SearchBase(BaseModel):
-    tg_user_id: int
-    tags: list[str]
-
 class SearchOut(UserOut):
     gifs_data: list[GifOut]
 
