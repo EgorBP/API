@@ -4,6 +4,7 @@ from database import get_db
 from services import get_user_gifs_with_tags
 from typing import Optional, List
 
+
 router = APIRouter()
 
 
@@ -11,5 +12,6 @@ router = APIRouter()
 def search_gifs(
         tg_user_id: int = Query(),
         tags: Optional[List[str]] = Query(None),
-        db=Depends(get_db)):
+        db=Depends(get_db)
+):
     return get_user_gifs_with_tags(db, tg_id=tg_user_id, tags=tags)

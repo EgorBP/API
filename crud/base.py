@@ -15,7 +15,7 @@ def get_instances(
         session: Session,
         model: type,
         columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute | None = None,
-        filters: dict[InstrumentedAttribute, Sequence[int] | int] | None = None
+        filters: dict[InstrumentedAttribute, Sequence[int | str] | int | str] | None = None
 ):
     """
     Универсальная функция получения записей с фильтрацией по колонкам.

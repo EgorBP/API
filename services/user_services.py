@@ -105,7 +105,6 @@ def get_user_gifs_with_tags(
     if tags:
         i = 0
         while i < len(gifs_data):
-            stop = False
             # print(i, len(gifs_data))
             for tag in tags:
                 stop = any(tag in data_tag for data_tag in gifs_data[i]['tags'])
@@ -113,11 +112,6 @@ def get_user_gifs_with_tags(
                     gifs_data.remove(gifs_data[i])
                     i -= 1
                     break
-            # for data_tag in gifs_data[i]['tags']:
-            #     # print(data_tag)
-            #     stop = any(tag in data_tag for tag in tags)
-            #     if stop:
-            #         break
             i += 1
 
     result['gifs_data'] = gifs_data
@@ -157,8 +151,8 @@ def set_new_user_tags_on_gif(
             if not old_tag in tags:
                 tag_id = get_instances(session, Tag, Tag.id, {Tag.tag: old_tag})[0][0]
                 delete_instances(session, UserGifTag, filters={
-                    UserGifTag.user_id: old_data['user_id'],
-                    UserGifTag.gif_id: old_data['gifs_data'][0]['gif_id'],
+                    UserGifTag.user_id: old_data['id'],
+                    UserGifTag.gif_id: old_data['gifs_data'][0]['id'],
                     UserGifTag.tag_id: tag_id,
                 })
             else:

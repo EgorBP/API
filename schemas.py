@@ -23,6 +23,9 @@ class GifBase(BaseModel):
 class GifCreate(GifBase):
     pass
 
+class GifUpdate(BaseModel):
+    tags: list[str]
+
 class GifOut(GifBase):
     id: int
     tags: list[str]
@@ -57,3 +60,7 @@ class UserGifTagBase(BaseModel):
     user_id: int
     gif_id: int
     tag_id: int
+
+
+class Successful(BaseModel):
+    successful: bool = True
