@@ -10,11 +10,11 @@ class UserCreate(UserBase):
 
 class UserOut(UserBase):
     id: int
-    gif_count: int
 
     model_config = {
         "from_attributes": True
     }
+
 
 # ===== Гифка =====
 class GifBase(BaseModel):
@@ -25,10 +25,21 @@ class GifCreate(GifBase):
 
 class GifOut(GifBase):
     id: int
+    tags: list[str]
 
     model_config = {
         "from_attributes": True
     }
+
+
+# ===== Поиск по тегам =====
+class SearchBase(BaseModel):
+    tg_user_id: int
+    tags: list[str]
+
+class SearchOut(UserOut):
+    gifs_data: list[GifOut]
+
 
 # ===== Тег =====
 class TagBase(BaseModel):
@@ -43,6 +54,7 @@ class TagOut(TagBase):
     model_config = {
         "from_attributes": True
     }
+
 
 # ===== Связь юзер-гифка-тег =====
 class UserGifTagBase(BaseModel):
