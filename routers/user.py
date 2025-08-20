@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from schemas import GifOut, GifUpdate, Successful
 from database import get_db
 from services import get_user_gifs_with_tags, set_new_user_tags_on_gif

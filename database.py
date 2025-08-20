@@ -1,8 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from environs import Env
-from sqlalchemy.orm import Session
-import models, schemas
 
 
 env = Env()
