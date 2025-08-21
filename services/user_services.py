@@ -146,7 +146,7 @@ def set_new_user_tags_on_gif(
     old_data = get_user_gifs_with_tags(session, tg_id=tg_user_id, tg_gifs_id=tg_gif_id)
 
     # Удаляем старые ненужные теги
-    if old_data['gifs_data']:
+    if old_data and old_data['gifs_data']:
         for old_tag in old_data['gifs_data'][0]['tags']:
             if not old_tag in tags:
                 tag_id = get_instances(session, Tag, Tag.id, {Tag.tag: old_tag})[0][0]
