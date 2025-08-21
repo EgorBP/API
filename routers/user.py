@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from schemas import GifOut, GifUpdate, Successful
 from database import get_db
 from services import get_user_gifs_with_tags, set_new_user_tags_on_gif
@@ -29,7 +29,13 @@ def get_gif(
     - **tg_gif_id**: str — идентификатор GIF в Telegram
     - **tags**: list[str] — список тегов GIF
     """
-    return get_user_gifs_with_tags(db, tg_id=tg_user_id, tg_gifs_id=tg_gif_id)['gifs_data'][0]
+    # Если чтото не найдено при попытке обращения выбросит ошибку
+    try:
+        data = get_user_gifs_with_tags(db, tg_id=tg_user_id, tg_gifs_id=tg_gif_id)['gifs_data'][0]
+    except:
+        raise HTTPException(status_code=404, detail="Data not found")
+
+    return data
 
 
 @router.put('/{tg_user_id}/gif/{tg_gif_id}', response_model=Successful)
@@ -71,8 +77,11 @@ def delete_gif_tags(
     Объект `Successful`:
     - **successful**: bool — всегда `true`, если удаление прошло успешно
     """
-    delete_instances(db, UserGifTag, filters={
+    result = delete_instances(db, UserGifTag, filters={
         UserGifTag.user_id: get_instances(db, User, columns=User.id, filters={User.tg_id: tg_user_id})[0][0],
         UserGifTag.gif_id: get_instances(db, Gif, columns=Gif.id, filters={Gif.tg_gif_id: tg_gif_id})[0][0],
     })
+    if not result:
+        raise HTTPException(status_code=404, detail="Instances not found")
+
     return Successful()
