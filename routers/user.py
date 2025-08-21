@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
-from schemas import GifOut, GifUpdate, Successful
+from schemas import GifOut, GifUpdate, Successful, TagOut
 from database import get_db
-from services import get_user_gifs_with_tags, set_new_user_tags_on_gif
+from services import get_user_gifs_with_tags, set_new_user_tags_on_gif, get_all_user_tags
 from crud import delete_instances, get_instances
 from models import UserGifTag, User, Gif
 
@@ -31,7 +31,7 @@ def get_gif(
     """
     # Если чтото не найдено при попытке обращения выбросит ошибку
     try:
-        data = get_user_gifs_with_tags(db, tg_id=tg_user_id, tg_gifs_id=tg_gif_id)['gifs_data'][0]
+        data = get_user_gifs_with_tags(db, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id)['gifs_data'][0]
     except:
         raise HTTPException(status_code=404, detail="Data not found")
 
@@ -85,3 +85,24 @@ def delete_gif_tags(
         raise HTTPException(status_code=404, detail="Instances not found")
 
     return Successful()
+
+
+@router.get('/{tg_user_id}/tags', response_model=list[str])
+def get_user_tags(
+        tg_user_id: int,
+        db=Depends(get_db)
+):
+    """
+    Получение всех тегов пользователя по его Telegram ID.
+
+    - **tg_user_id**: Telegram ID пользователя
+    - **db**: подключение к базе данных через Depends
+
+    **Возвращает**:
+    Список тегов (list[str]) или HTTP 404, если пользователь не найден.
+    """
+    data = get_all_user_tags(db, tg_user_id=tg_user_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return data

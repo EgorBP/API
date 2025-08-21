@@ -7,7 +7,7 @@ from typing import Sequence
 def get_user_gifs_with_tags(
         session: Session,
         user_id: int | None = None,
-        tg_id: int | None = None,
+        tg_user_id: int | None = None,
         tg_gifs_id: Sequence[str] | str = None,
         tags: Sequence[str] | str = None,
 ):
@@ -18,7 +18,7 @@ def get_user_gifs_with_tags(
     {
         'user_id': внутренний ID пользователя,
 
-        'tg_id': Telegram ID пользователя,
+        'tg_user_id': Telegram ID пользователя,
 
         'gifs_data': [
             {
@@ -36,21 +36,21 @@ def get_user_gifs_with_tags(
     Таблицы `users`, `gifs`, `tags` и `user_gif_tags` связываются через JOIN.
     Фильтрация возможна по:
       - `user_id` (внутренний ID в базе),
-      - `tg_id` (Telegram ID пользователя),
+      - `tg_user_id` (Telegram ID пользователя),
       - `tg_gifs_id` (Telegram ID гифок, возвращаются только указанные гифки),
       - `tags` (возвращаются только гифки, содержащие все теги).
 
-    Если указаны одновременно `user_id` и `tg_id`, приоритет имеет `user_id`.
+    Если указаны одновременно `user_id` и `tg_user_id`, приоритет имеет `user_id`.
 
     :param session: объект сессии SQLAlchemy.
     :param user_id: внутренний ID пользователя (опционально).
-    :param tg_id: Telegram ID пользователя (опционально).
+    :param tg_user_id: Telegram ID пользователя (опционально).
     :param tg_gifs_id: один или несколько Telegram ID гифок для фильтрации (опционально).
     :param tags: один или несколько тегов для фильтрации гифок (опционально).
     :return: словарь с данными пользователя, гифок и тегов в формате, описанном выше,
              или None, если пользователь не найден.
     """
-    if not user_id and not tg_id:
+    if not user_id and not tg_user_id:
         return None
 
     if isinstance(tg_gifs_id, str):
@@ -68,8 +68,8 @@ def get_user_gifs_with_tags(
 
     if user_id:
         query = query.filter(UserGifTag.user_id == user_id)
-    elif tg_id:
-        query = query.filter(User.tg_id == tg_id)
+    elif tg_user_id:
+        query = query.filter(User.tg_id == tg_user_id)
 
     first_row = query.first()
     if not first_row:
@@ -119,6 +119,46 @@ def get_user_gifs_with_tags(
     return result
 
 
+def get_all_user_tags(
+        session: Session,
+        user_id: int | None = None,
+        tg_user_id: int | None = None,
+):
+    """
+    Возвращает все уникальные теги, связанные с GIF пользователя.
+
+    Можно указать пользователя по внутреннему `user_id` или по Telegram ID `tg_user_id`.
+    Если оба параметра отсутствуют, функция возвращает None.
+
+    Если указаны одновременно `user_id` и `tg_user_id`, приоритет имеет `user_id`.
+
+    :param session: объект сессии SQLAlchemy.
+    :param user_id: внутренний ID пользователя (опционально).
+    :param tg_user_id: Telegram ID пользователя (опционально).
+    :return: множество уникальных тегов (`set[str]`) или None, если пользователь не найден.
+    """
+    if not user_id and not tg_user_id:
+        return None
+
+    query = (
+        session.query(UserGifTag.user_id, UserGifTag.gif_id, User.tg_id, Gif.tg_gif_id, Tag.tag)
+        .join(User, UserGifTag.user_id == User.id)
+        .join(Gif, UserGifTag.gif_id == Gif.id)
+        .join(Tag, UserGifTag.tag_id == Tag.id)
+    )
+
+    if user_id:
+        query = query.filter(UserGifTag.user_id == user_id)
+    elif tg_user_id:
+        query = query.filter(User.tg_id == tg_user_id)
+
+    first_row = query.first()
+    if not first_row:
+        return None
+
+    return set(row.tag for row in query.all())
+
+
 def set_new_user_tags_on_gif(
         session: Session,
         tg_user_id: int,
@@ -143,7 +183,7 @@ def set_new_user_tags_on_gif(
     if isinstance(tags, (str, tuple)):
         tags = [tags]
 
-    old_data = get_user_gifs_with_tags(session, tg_id=tg_user_id, tg_gifs_id=tg_gif_id)
+    old_data = get_user_gifs_with_tags(session, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id)
 
     # Удаляем старые ненужные теги
     if old_data and old_data['gifs_data']:
