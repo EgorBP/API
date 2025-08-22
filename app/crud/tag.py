@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
-from models import Tag
-from utils import get_all_columns
+from app.models import Tag
+from app.utils import get_all_columns
 
 
 def create_tag(session: Session, tag: str):

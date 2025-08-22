@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
-from models import User
-from utils import get_all_columns
+from app.models import User
+from app.utils import get_all_columns
 
 
 def create_user(session: Session, tg_id: int):

@@ -6,7 +6,7 @@ from sqlalchemy import pool
 from alembic import context
 
 from environs import Env
-from models import Base
+from app.models import Base
 
 
 env = Env()

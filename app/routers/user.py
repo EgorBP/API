@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from schemas import GifOut, GifUpdate, Successful
-from database import get_db
-from services import get_user_gifs_with_tags, set_new_user_tags_on_gif, get_all_user_tags
-from crud import delete_instances, get_instances
-from models import UserGifTag, User, Gif
+from app.schemas import GifOut, GifUpdate, Successful
+from app.database import get_db
+from app.services import get_user_gifs_with_tags, set_new_user_tags_on_gif, get_all_user_tags
+from app.crud import delete_instances, get_instances
+from app.models import UserGifTag, User, Gif
 from typing import Optional
 
 

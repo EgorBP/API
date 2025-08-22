@@ -1,6 +1,6 @@
 .venv
 .env
-test.py
+app/test.py
 
 
 ### PyCharm+iml template

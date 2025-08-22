@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
-from models import Gif
-from utils import get_all_columns
+from app.models import Gif
+from app.utils import get_all_columns
 
 
 def create_gif(session: Session, tg_gif_id: str):

@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
-from models import UserGifTag
-from utils import get_all_columns
+from app.models import UserGifTag
+from app.utils import get_all_columns
 
 
 def create_user_gif_tag(session: Session, user_id: int, gif_id: int, tag_id: int):

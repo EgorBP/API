@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from models import UserGifTag, User, Gif, Tag
-from crud import create_gif, create_tag, create_user, create_user_gif_tag, delete_instances, get_instances
+from app.models import UserGifTag, User, Gif, Tag
+from app.crud import create_gif, create_tag, create_user, create_user_gif_tag, delete_instances, get_instances
 from typing import Sequence
 
 

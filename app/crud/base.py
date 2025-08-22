@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import InstrumentedAttribute
-from utils import is_valid_column_for_model, get_all_columns
+from app.utils import is_valid_column_for_model, get_all_columns
 from typing import Sequence
 
 """
