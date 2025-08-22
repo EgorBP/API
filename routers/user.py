@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
-from schemas import GifOut, GifUpdate, Successful, TagOut
+from fastapi import APIRouter, Depends, HTTPException, Query
+from schemas import GifOut, GifUpdate, Successful
 from database import get_db
 from services import get_user_gifs_with_tags, set_new_user_tags_on_gif, get_all_user_tags
 from crud import delete_instances, get_instances
 from models import UserGifTag, User, Gif
+from typing import Optional
 
 
 router = APIRouter(
@@ -64,22 +65,36 @@ def update_gif_tags(
 @router.delete('/{tg_user_id}/gif/{gif_id}', response_model=Successful)
 def delete_gif_tags(
         tg_user_id: int,
-        tg_gif_id: str,
+        gif_id: str,
+        gif_id_type: Optional[str] = Query(None),
         db=Depends(get_db)
 ):
     """
     Удалить все связи тегов с конкретным GIF пользователя.
 
     - **tg_user_id**: Telegram ID пользователя
-    - **tg_gif_id**: идентификатор GIF в Telegram
+    - **gif_id**: идентификатор GIF (по умолчанию из telegram)
+    - **gif_id_type**: выбор типа поиска для gif_id.
+        - tg: поиск в базе по айди гифки из telegram
+        - db: поиск в базе по айди гифки из внутренней БД
+
+        Если не передано ничего выбирается вариант tg
 
     **Returns:**
     Объект `Successful`:
     - **successful**: bool — всегда `true`, если удаление прошло успешно
     """
+    if not gif_id_type or gif_id_type == 'tg':
+        try:
+            gif_id = get_instances(db, Gif, columns=Gif.id, filters={Gif.tg_gif_id: gif_id})[0][0]
+        except IndexError:
+            raise HTTPException(status_code=404, detail="Instances not found")
+    elif gif_id_type == 'db':
+        gif_id = int(gif_id)
+
     result = delete_instances(db, UserGifTag, filters={
         UserGifTag.user_id: get_instances(db, User, columns=User.id, filters={User.tg_id: tg_user_id})[0][0],
-        UserGifTag.gif_id: get_instances(db, Gif, columns=Gif.id, filters={Gif.tg_gif_id: tg_gif_id})[0][0],
+        UserGifTag.gif_id: gif_id,
     })
     if not result:
         raise HTTPException(status_code=404, detail="Instances not found")
