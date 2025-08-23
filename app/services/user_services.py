@@ -16,13 +16,13 @@ def get_user_gifs_with_tags(
 
     Формируемая структура:
     {
-        'user_id': внутренний ID пользователя,
+        'id': внутренний ID пользователя,
 
         'tg_user_id': Telegram ID пользователя,
 
         'gifs_data': [
             {
-                'gif_id': внутренний ID гифки,
+                'id': внутренний ID гифки,
 
                 'tg_gif_id': Telegram ID гифки,
 
@@ -80,7 +80,7 @@ def get_user_gifs_with_tags(
 
     result = {
         'id': user_id,
-        'tg_id': first_row.tg_id,
+        'tg_user_id': first_row.tg_id,
         'gifs_data': []
     }
 
