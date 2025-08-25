@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 # ===== Пользователь =====
 class UserBase(BaseModel):
-    tg_id: int
+    tg_user_id: int
 
 class UserCreate(UserBase):
     pass
