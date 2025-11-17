@@ -1,1 +1,1 @@
-from .sqlalchemy_helpers import is_valid_column_for_model, get_all_columns
+from .sqlalchemy_helpers import is_valid_column_for_model, get_orm_columns

@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
 from app.models import UserGifTag
-from app.utils import get_all_columns
+from app.utils import get_orm_columns
 
 
 def create_user_gif_tag(session: Session, user_id: int, gif_id: int, tag_id: int):
@@ -19,8 +19,8 @@ def create_user_gif_tag(session: Session, user_id: int, gif_id: int, tag_id: int
     :param tag_id: ID тега.
     :return: объект с кортежем значений всех колонок модели UserGifTag.
     """
-    columns = get_all_columns(UserGifTag)
-
+    columns = get_orm_columns(UserGifTag)
+    session.get()
     stmt = insert(UserGifTag).values(
         user_id=user_id,
         gif_id=gif_id,
