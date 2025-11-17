@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
 from app.models import Gif
-from app.utils import get_all_columns
+from app.utils import get_orm_columns
 
 
 def create_gif(session: Session, tg_gif_id: str):
@@ -16,7 +16,7 @@ def create_gif(session: Session, tg_gif_id: str):
     :param tg_gif_id: Telegram ID гифки.
     :return: объект с кортежем значений всех колонок модели Gif.
     """
-    columns = get_all_columns(Gif)
+    columns = get_orm_columns(Gif)
 
     stmt = insert(Gif).values(tg_gif_id=tg_gif_id).on_conflict_do_nothing(
         index_elements=[Gif.tg_gif_id],

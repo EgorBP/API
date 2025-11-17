@@ -1,4 +1,4 @@
-from .base import get_instances, delete_instances
+from .base import BaseCRUD
 from .users import create_user
 from .gifs import create_gif
 from .tag import create_tag
