@@ -12,7 +12,15 @@ from app.models import Base
 env = Env()
 env.read_env()
 
-DATABASE_URL = env('DATABASE_URL')
+POSTGRES_USER = env("POSTGRES_USER")
+POSTGRES_PASSWORD = env("POSTGRES_PASSWORD")
+POSTGRES_DB = env("POSTGRES_DB")
+POSTGRES_HOST = env("POSTGRES_HOST")
+POSTGRES_PORT = env("POSTGRES_PORT")
+
+DATABASE_URL_SYNC = (
+    f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -27,7 +35,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 
 target_metadata = Base.metadata
-config.set_main_option("sqlalchemy.url", DATABASE_URL)
+config.set_main_option("sqlalchemy.url", DATABASE_URL_SYNC)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

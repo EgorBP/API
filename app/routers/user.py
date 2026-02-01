@@ -1,10 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.schemas import GifOut, GifUpdate, Successful
 from app.database import get_db
-from app.services import get_user_gifs_with_tags, set_new_user_tags_on_gif, get_all_user_tags
-from app.crud import delete_instances, get_instances
-from app.models import UserGifTag, User, Gif
-from typing import Optional
+from app.services import get_user_gifs_with_tags, set_new_user_tags_on_gif, get_all_user_tags, delete_user_gif_tags
 
 
 router = APIRouter(
@@ -13,7 +10,7 @@ router = APIRouter(
 
 
 @router.get('/{tg_user_id}/gif/{tg_gif_id}', response_model=GifOut)
-def get_gif(
+async def get_gif(
         tg_user_id: int,
         tg_gif_id: str,
         db=Depends(get_db)
@@ -30,9 +27,9 @@ def get_gif(
     - **tg_gif_id**: str — идентификатор GIF в Telegram
     - **tags**: list[str] — список тегов GIF
     """
-    # Если чтото не найдено при попытке обращения выбросит ошибку
+    # Если что-то не найдено при попытке обращения выбросит ошибку
     try:
-        data = get_user_gifs_with_tags(db, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id)['gifs_data'][0]
+        data = (await get_user_gifs_with_tags(db, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id))['gifs_data'][0]
     except:
         raise HTTPException(status_code=404, detail="Data not found")
 
@@ -40,7 +37,7 @@ def get_gif(
 
 
 @router.put('/{tg_user_id}/gif/{tg_gif_id}', response_model=Successful)
-def update_gif_tags(
+async def update_gif_tags(
         tg_user_id: int,
         tg_gif_id: str,
         gif_data: GifUpdate,
@@ -57,16 +54,16 @@ def update_gif_tags(
     Объект `Successful`:
     - **successful**: bool — всегда `true`, если операция прошла успешно
     """
-    set_new_user_tags_on_gif(db, tg_user_id, tg_gif_id, gif_data.tags)
+    await set_new_user_tags_on_gif(db, tg_user_id, tg_gif_id, gif_data.tags)
     # return get_user_gifs_with_tags(db, tg_id=tg_user_id, tg_gifs_id=tg_gif_id)['gifs_data'][0]
     return Successful()
 
 
 @router.delete('/{tg_user_id}/gif/{gif_id}', response_model=Successful)
-def delete_gif_tags(
+async def delete_gif_tags(
         tg_user_id: int,
         gif_id: str,
-        gif_id_type: Optional[str] = Query(None),
+        gif_id_type: str | None = Query(None),
         db=Depends(get_db)
 ):
     """
@@ -84,18 +81,12 @@ def delete_gif_tags(
     Объект `Successful`:
     - **successful**: bool — всегда `true`, если удаление прошло успешно
     """
-    if not gif_id_type or gif_id_type == 'tg':
-        try:
-            gif_id = get_instances(db, Gif, columns=Gif.id, filters={Gif.tg_gif_id: gif_id})[0][0]
-        except IndexError:
-            raise HTTPException(status_code=404, detail="Instances not found")
-    elif gif_id_type == 'db':
-        gif_id = int(gif_id)
-
-    result = delete_instances(db, UserGifTag, filters={
-        UserGifTag.user_id: get_instances(db, User, columns=User.id, filters={User.tg_id: tg_user_id})[0][0],
-        UserGifTag.gif_id: gif_id,
-    })
+    result = await delete_user_gif_tags(
+        async_session=db,
+        tg_user_id=tg_user_id,
+        gif_id=gif_id,
+        gif_id_type=gif_id_type,
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Instances not found")
 
@@ -103,7 +94,7 @@ def delete_gif_tags(
 
 
 @router.get('/{tg_user_id}/tags', response_model=list[str])
-def get_user_tags(
+async def get_user_tags(
         tg_user_id: int,
         db=Depends(get_db)
 ):
@@ -116,7 +107,7 @@ def get_user_tags(
     **Возвращает**:
     Список тегов (list[str]) или HTTP 404, если пользователь не найден.
     """
-    data = get_all_user_tags(db, tg_user_id=tg_user_id)
+    data = await get_all_user_tags(db, tg_user_id=tg_user_id)
     if not data:
         raise HTTPException(status_code=404, detail="User not found")
 

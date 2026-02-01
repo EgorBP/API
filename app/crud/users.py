@@ -1,35 +1,39 @@
-from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.crud import _BaseCRUD
 from app.models import User
-from app.utils import get_orm_columns
 
 
-async def create_user(session: Session, tg_id: int):
+class UsersCRUD(_BaseCRUD):
     """
-    Создаёт нового пользователя в базе данных или возвращает существующего.
+    CRUD для модели User.
 
-    Если в таблице `users` уже есть запись с таким `tg_id`, новая не создаётся,
-    и возвращается существующий пользователь. Если пользователя ещё нет,
-    он создаётся и возвращается.
-
-    :param session: объект сессии SQLAlchemy.
-    :param tg_id: Telegram ID пользователя.
-    :return: объект с кортежем значений всех колонок модели User.
+    Переопределяется только логика создания пользователя.
+    Остальные операции наследуются от BaseCRUD.
     """
-    columns = get_orm_columns(User)
 
-    # stmt = insert(User).values(tg_id=tg_id).on_conflict_do_nothing(
-    #     index_elements=[User.tg_id],
-    # ).returning(*columns)
-    insert_stmt = insert(User).values(tg_id=tg_id)
-    stmt = insert(User).values(tg_id=tg_id).on_conflict_do_update(
-        index_elements=[User.tg_id],
-        set_={'tg_id': insert_stmt.excluded.tg_id},
-    ).returning(*columns)
+    def __init__(self, async_session: AsyncSession):
+        super().__init__(async_session, model=User)
 
-    result = (await session.execute(stmt)).fetchone()
-    # if not result:
-    #     return session.query(*columns).filter(User.tg_id == tg_id).first()
+    async def create_user(
+            self,
+            tg_id: int,
+    ):
+        """
+        Создаёт нового пользователя в базе данных или возвращает существующего.
 
-    await session.commit()
-    return result
+        Метод является обёрткой над универсальным методом `create_instance`
+        базового класса `_BaseCRUD`.
+
+        Если в таблице `users` уже существует запись с таким `tg_id`
+        (по уникальному ограничению), новая запись не создаётся,
+        а возвращается существующая.
+
+        В противном случае создаётся новый пользователь и возвращается
+        строка со значениями всех колонок модели `User`.
+
+        :param tg_id: Telegram ID пользователя.
+        :return: Row с колонками модели `User` после вставки или при конфликте.
+        """
+        return await super().create_instance({
+            User.tg_id: tg_id
+        })

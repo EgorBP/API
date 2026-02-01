@@ -1,30 +1,40 @@
-from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Tag
-from app.utils import get_orm_columns
+from app.crud import _BaseCRUD
 
 
-def create_tag(session: Session, tag: str):
+class TagsCRUD(_BaseCRUD):
     """
-    Создаёт новый тег в базе данных или возвращает существующий.
+    CRUD для модели Tag.
 
-    Если в таблице `tags` уже есть запись с таким `tag`, новая не создаётся,
-    и возвращается существующая. Если тега ещё нет,
-    он создаётся и возвращается.
-
-    :param session: объект сессии SQLAlchemy.
-    :param tag: тег.
-    :return: объект с кортежем значений всех колонок модели Gif.
+    Переопределяется только логика создания записей.
+    Остальные операции (get / update / delete) наследуются от BaseCRUD.
     """
-    columns = get_orm_columns(Tag)
 
-    stmt = insert(Tag).values(tag=tag).on_conflict_do_nothing(
-        index_elements=[Tag.tag],
-    ).returning(*columns)
+    def __init__(self, async_session: AsyncSession):
+        super().__init__(async_session, model=Tag)
 
-    result = session.execute(stmt).fetchone()
-    if not result:
-        return session.query(*columns).filter(Tag.tag == tag).first()
+    async def create_tag(
+            self,
+            tag: str,
+    ):
+        """
+        Создаёт новый тег в базе данных или возвращает существующий.
 
-    session.commit()
-    return result
+        Метод является обёрткой над универсальным методом `create_instance`
+        базового класса `_BaseCRUD`.
+
+        Если в таблице `tags` уже существует запись с таким значением `tag`
+        (по уникальному ограничению или первичному ключу), новая запись
+        не создаётся, а возвращается существующая.
+
+        В случае отсутствия конфликта создаётся новая запись и возвращается
+        строка со значениями всех колонок модели `Tag`.
+
+        :param tag: Строковое значение тега (должно быть уникальным).
+        :return: Row с колонками модели `Tag` после вставки или при конфликте.
+        """
+        return await super().create_instance({
+            Tag.tag: tag
+        })
+    

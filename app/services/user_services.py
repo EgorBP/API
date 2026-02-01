@@ -1,11 +1,13 @@
-from sqlalchemy.orm import Session
+import asyncio
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import UserGifTag, User, Gif, Tag
-from app.crud import create_gif, create_tag, create_user, create_user_gif_tag, delete_instances, get_instances
+from app.crud import UsersCRUD, UserGifTagCRUD, TagsCRUD, GifsCRUD
 from typing import Sequence
 
 
-def get_user_gifs_with_tags(
-        session: Session,
+async def get_user_gifs_with_tags(
+        async_session: AsyncSession,
         user_id: int | None = None,
         tg_user_id: int | None = None,
         tg_gifs_id: Sequence[str] | str = None,
@@ -14,7 +16,8 @@ def get_user_gifs_with_tags(
     """
     Возвращает гифки пользователя с их тегами в виде вложенного словаря.
 
-    Формируемая структура:
+    Формируемая структура:  
+    
     {
         'id': внутренний ID пользователя,
 
@@ -42,7 +45,7 @@ def get_user_gifs_with_tags(
 
     Если указаны одновременно `user_id` и `tg_user_id`, приоритет имеет `user_id`.
 
-    :param session: объект сессии SQLAlchemy.
+    :param async_session: Объект асинхронной сессии SQLAlchemy.
     :param user_id: внутренний ID пользователя (опционально).
     :param tg_user_id: Telegram ID пользователя (опционально).
     :param tg_gifs_id: один или несколько Telegram ID гифок для фильтрации (опционально).
@@ -50,77 +53,77 @@ def get_user_gifs_with_tags(
     :return: словарь с данными пользователя, гифок и тегов в формате, описанном выше,
              или None, если пользователь не найден.
     """
-    if not user_id and not tg_user_id:
+    if user_id is None and tg_user_id is None:
         return None
 
     if isinstance(tg_gifs_id, str):
-        tg_gifs_id = (tg_gifs_id, )
+        tg_gifs_id = (tg_gifs_id,)
 
     if isinstance(tags, str):
-        tags = (tags, )
+        tags = (tags,)
 
-    query = (
-        session.query(UserGifTag.user_id, UserGifTag.gif_id, User.tg_id, Gif.tg_gif_id, Tag.tag)
+    stmt = (
+        select(
+            UserGifTag.user_id,
+            UserGifTag.gif_id,
+            User.tg_id,
+            Gif.tg_gif_id,
+            Tag.tag,
+        )
+        .select_from(UserGifTag)
         .join(User, UserGifTag.user_id == User.id)
         .join(Gif, UserGifTag.gif_id == Gif.id)
         .join(Tag, UserGifTag.tag_id == Tag.id)
     )
 
-    if user_id:
-        query = query.filter(UserGifTag.user_id == user_id)
-    elif tg_user_id:
-        query = query.filter(User.tg_id == tg_user_id)
+    if user_id is not None:
+        stmt = stmt.where(UserGifTag.user_id == user_id)
+    else:
+        stmt = stmt.where(User.tg_id == tg_user_id)
 
-    first_row = query.first()
-    if not first_row:
+    if tg_gifs_id:
+        stmt = stmt.where(Gif.tg_gif_id.in_(tg_gifs_id))
+
+    result = await async_session.execute(stmt)
+    rows = result.all()
+
+    if not rows:
         return None
 
-    if not user_id:
-        user_id = first_row.user_id
+    first = rows[0]
+    resolved_user_id = user_id if user_id is not None else first.user_id
 
-    result = {
-        'id': user_id,
-        'tg_user_id': first_row.tg_id,
-        'gifs_data': []
-    }
+    gifs_map: dict[int, dict] = {}
 
-    gifs_data = []
-    for row in query.all():
-        # Если есть фильтр гифок, то проверяем вошла ли наша гифка в него если нет просто идем дальше
-        if (tg_gifs_id and row.tg_gif_id in tg_gifs_id) or not tg_gifs_id:
-            # Пытаемся получить индекс того словаря в котором есть гифка, если такого нету создаем новый
-            try:
-                index = [row.gif_id == data['id'] for data in gifs_data].index(True)
-            except ValueError:
-                index = -1
-            if index >= 0:
-                gifs_data[index]['tags'].append(row.tag)
-            else:
-                gifs_data.append({
-                    'id': row.gif_id,
-                    'tg_gif_id': row.tg_gif_id,
-                    'tags': [row.tag]
-                })
+    for row in rows:
+        gif = gifs_map.setdefault(
+            row.gif_id,
+            {
+                'id': row.gif_id,
+                'tg_gif_id': row.tg_gif_id,
+                'tags': [],
+            }
+        )
+        gif['tags'].append(row.tag)
+
+    gifs_data = list(gifs_map.values())
 
     if tags:
-        i = 0
-        while i < len(gifs_data):
-            # print(i, len(gifs_data))
-            for tag in tags:
-                stop = any(tag in data_tag for data_tag in gifs_data[i]['tags'])
-                if not stop:
-                    gifs_data.remove(gifs_data[i])
-                    i -= 1
-                    break
-            i += 1
+        tags_set = set(tags)
+        gifs_data = [
+            gif for gif in gifs_data
+            if tags_set.issubset(set(gif['tags']))
+        ]
 
-    result['gifs_data'] = gifs_data
-
-    return result
+    return {
+        'id': resolved_user_id,
+        'tg_user_id': first.tg_id,
+        'gifs_data': gifs_data,
+    }
 
 
-def get_all_user_tags(
-        session: Session,
+async def get_all_user_tags(
+        async_session: AsyncSession,
         user_id: int | None = None,
         tg_user_id: int | None = None,
 ):
@@ -132,35 +135,38 @@ def get_all_user_tags(
 
     Если указаны одновременно `user_id` и `tg_user_id`, приоритет имеет `user_id`.
 
-    :param session: объект сессии SQLAlchemy.
+    :param async_session: Объект асинхронной сессии SQLAlchemy.
     :param user_id: внутренний ID пользователя (опционально).
     :param tg_user_id: Telegram ID пользователя (опционально).
     :return: множество уникальных тегов (`set[str]`) или None, если пользователь не найден.
     """
-    if not user_id and not tg_user_id:
+    if user_id is None and tg_user_id is None:
         return None
 
-    query = (
-        session.query(UserGifTag.user_id, UserGifTag.gif_id, User.tg_id, Gif.tg_gif_id, Tag.tag)
+    stmt = (
+        select(Tag.tag)
+        .select_from(UserGifTag)
         .join(User, UserGifTag.user_id == User.id)
         .join(Gif, UserGifTag.gif_id == Gif.id)
         .join(Tag, UserGifTag.tag_id == Tag.id)
     )
 
-    if user_id:
-        query = query.filter(UserGifTag.user_id == user_id)
-    elif tg_user_id:
-        query = query.filter(User.tg_id == tg_user_id)
+    if user_id is not None:
+        stmt = stmt.where(UserGifTag.user_id == user_id)
+    else:
+        stmt = stmt.where(User.tg_id == tg_user_id)
 
-    first_row = query.first()
-    if not first_row:
+    result = await async_session.execute(stmt)
+    tags = result.scalars().all()
+
+    if not tags:
         return None
 
-    return set(row.tag for row in query.all())
+    return set(tags)
 
 
-def set_new_user_tags_on_gif(
-        session: Session,
+async def set_new_user_tags_on_gif(
+        async_session: AsyncSession,
         tg_user_id: int,
         tg_gif_id: str,
         tags: Sequence[str] | str,
@@ -174,33 +180,81 @@ def set_new_user_tags_on_gif(
     - для каждой комбинации (user, gif, tag) создастся запись в таблице `user_gif_tags`.
     - старые теги будут удалены.
 
-    :param session: объект сессии SQLAlchemy.
+    :param async_session: Объект асинхронной сессии SQLAlchemy.
     :param tg_user_id: Telegram ID пользователя.
     :param tg_gif_id: Telegram ID гифки.
     :param tags: один тег или список тегов, которые будут связаны с гифкой.
     :return: None (изменения фиксируются в базе данных через session).
     """
+    
+    user_gif_tag_crud = UserGifTagCRUD(async_session)
+    users_crud = UsersCRUD(async_session)
+    tags_crud = TagsCRUD(async_session)
+    gifs_crud = GifsCRUD(async_session)
     if isinstance(tags, (str, tuple)):
         tags = [tags]
 
-    old_data = get_user_gifs_with_tags(session, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id)
+    old_data = await get_user_gifs_with_tags(async_session, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id)
 
+    # TODO: Можно оптимизировать
     # Удаляем старые ненужные теги
-    if old_data and old_data['gifs_data']:
-        for old_tag in old_data['gifs_data'][0]['tags']:
-            if not old_tag in tags:
-                tag_id = get_instances(session, Tag, Tag.id, {Tag.tag: old_tag})[0][0]
-                delete_instances(session, UserGifTag, filters={
-                    UserGifTag.user_id: old_data['id'],
-                    UserGifTag.gif_id: old_data['gifs_data'][0]['id'],
-                    UserGifTag.tag_id: tag_id,
-                })
-            else:
-                tags.remove(old_tag)
+    try:
+        if old_data and old_data['gifs_data']:
+            for old_tag in old_data['gifs_data'][0]['tags']:
+                if not old_tag in tags:
+                    tag_id = (await tags_crud.get_instances(columns=Tag.id, filters={Tag.tag: old_tag}))[0][0]
+                    await user_gif_tag_crud.delete_instances(filters={
+                        UserGifTag.user_id: old_data['id'],
+                        UserGifTag.gif_id: old_data['gifs_data'][0]['id'],
+                        UserGifTag.tag_id: tag_id,
+                    })
+                else:
+                    tags.remove(old_tag)
 
-    user = create_user(session, tg_user_id)
-    gif = create_gif(session, tg_gif_id)
-    tags = [create_tag(session, tag) for tag in tags]
+        user = await users_crud.create_user(tg_user_id)
+        gif = await gifs_crud.create_gif(tg_gif_id)
+        tags = await asyncio.gather(
+            *(tags_crud.create_tag(tag) for tag in tags)
+        )
+    
+        for tag in tags:
+            await user_gif_tag_crud.create_user_gif_tag(user_id=user.id, gif_id=gif.id, tag_id=tag.id)
+            
+        await async_session.commit()
+    except Exception:
+        await async_session.rollback()
+        raise
 
-    for tag in tags:
-        create_user_gif_tag(session, user_id=user.id, gif_id=gif.id, tag_id=tag.id)
+
+async def delete_user_gif_tags(
+        async_session: AsyncSession,
+        tg_user_id: int,
+        gif_id: str,
+        gif_id_type: str | None = None,
+):
+    gifs_crud = GifsCRUD(async_session)
+    users_crud = UsersCRUD(async_session)
+    user_gif_tag_crud = UserGifTagCRUD(async_session)
+    
+    if not gif_id_type or gif_id_type == 'tg':
+        try:
+            gif_id = (await gifs_crud.get_instances(columns=Gif.id, filters={Gif.tg_gif_id: gif_id}))[0][0]
+        except IndexError:
+            return None
+    elif gif_id_type == 'db':
+        gif_id = int(gif_id)
+    
+    users_id = (await users_crud.get_instances(columns=User.id, filters={User.tg_id: tg_user_id}))[0][0]
+    
+    try:
+        result = await user_gif_tag_crud.delete_instances(filters={
+            UserGifTag.user_id: users_id,
+            UserGifTag.gif_id: gif_id,
+        })
+        await async_session.commit()
+    
+        return result
+    
+    except Exception:
+        await async_session.rollback()
+        raise
