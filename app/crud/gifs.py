@@ -1,30 +1,42 @@
-from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.crud import _BaseCRUD
 from app.models import Gif
-from app.utils import get_orm_columns
 
 
-def create_gif(session: Session, tg_gif_id: str):
+class GifsCRUD(_BaseCRUD):
     """
-    Создаёт новую гифку в базе данных или возвращает существующую.
-
-    Если в таблице `gifs` уже есть запись с таким `tg_gif_id`, новая не создаётся,
-    и возвращается существующая. Если гифки ещё нет,
-    она создаётся и возвращается.
-
-    :param session: объект сессии SQLAlchemy.
-    :param tg_gif_id: Telegram ID гифки.
-    :return: объект с кортежем значений всех колонок модели Gif.
+    CRUD для модели Gif.
+    
+    Переопределяется только логика создания записей.
+    Остальные операции наследуются от BaseCRUD.
     """
-    columns = get_orm_columns(Gif)
+    
+    def __init__(
+            self, 
+            async_session: AsyncSession
+    ):
+        super().__init__(async_session, model=Gif)
 
-    stmt = insert(Gif).values(tg_gif_id=tg_gif_id).on_conflict_do_nothing(
-        index_elements=[Gif.tg_gif_id],
-    ).returning(*columns)
+    async def create_gif(
+            self,
+            tg_gif_id: str,
+    ):
+        """
+        Создаёт запись Gif в базе данных с указанным tg_gif_id.
 
-    result = session.execute(stmt).fetchone()
-    if not result:
-        return session.query(*columns).filter(Gif.tg_gif_id == tg_gif_id).first()
+        Этот метод является обёрткой над универсальным методом `create_instance`
+        базового класса `_BaseCRUD`. Он обеспечивает:
+            - строгую типизацию аргумента;
+            - автоматическое создание словаря для вставки в таблицу `Gif`;
+            - возврат первой найденной строки после вставки или при конфликте.
 
-    session.commit()
-    return result
+        В случае конфликта по уникальным или первичным ключам выполняется обновление
+        первой найденной колонки таблицы на саму себя (поведение `ON CONFLICT DO UPDATE`),
+        а возвращаемая строка содержит все колонки модели `Gif`.
+
+        :param tg_gif_id: Строковый идентификатор GIF из Telegram, должен быть уникальным.
+        :return: Row с колонками модели `Gif` после выполнения операции.
+        """
+        return await super().create_instance({
+            Gif.tg_gif_id: tg_gif_id
+        })

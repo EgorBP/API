@@ -1,41 +1,37 @@
-from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.crud import _BaseCRUD
 from app.models import UserGifTag
-from app.utils import get_orm_columns
 
 
-def create_user_gif_tag(session: Session, user_id: int, gif_id: int, tag_id: int):
+class UserGifTagCRUD(_BaseCRUD):
     """
-    Создаёт новую связь между пользователем, гифкой и тегом в таблице `user_gif_tags`
-    или возвращает существующую.
+    CRUD для модели UserGifTag.
 
-    Если в таблице уже есть запись с таким `user_id`, `gif_id` и `tag_id`,
-    новая не создаётся, и возвращается существующая.
-    Если записи ещё нет, она создаётся и возвращается.  
-
-    :param session: объект сессии SQLAlchemy.
-    :param user_id: ID пользователя.
-    :param gif_id: ID гифки.
-    :param tag_id: ID тега.
-    :return: объект с кортежем значений всех колонок модели UserGifTag.
+    Переопределяется только логика создания связи.
+    Остальные операции наследуются от BaseCRUD.    
     """
-    columns = get_orm_columns(UserGifTag)
-    session.get()
-    stmt = insert(UserGifTag).values(
-        user_id=user_id,
-        gif_id=gif_id,
-        tag_id=tag_id
-    ).on_conflict_do_nothing(
-        index_elements=[*columns]
-    ).returning(*columns)
 
-    result = session.execute(stmt).fetchone()
-    if not result:
-        return session.query(*columns).filter(
-            UserGifTag.user_id == user_id,
-            UserGifTag.gif_id == gif_id,
-            UserGifTag.tag_id == tag_id
-        ).first()
+    def __init__(self, async_session: AsyncSession):
+        super().__init__(async_session, model=UserGifTag)
 
-    session.commit()
-    return result
+    async def create_user_gif_tag(
+            self,
+            user_id: int,
+            gif_id: int,
+            tag_id: int,
+    ):
+        """
+        Создаёт связь между пользователем, гифкой и тегом
+        или возвращает существующую.
+
+        При конфликте по уникальному ограничению
+        (user_id, gif_id, tag_id) новая запись не создаётся,
+        а возвращается существующая строка.
+
+        :return: Row с колонками модели UserGifTag.
+        """
+        return await super().create_instance({
+            UserGifTag.user_id: user_id,
+            UserGifTag.gif_id: gif_id,
+            UserGifTag.tag_id: tag_id,
+        })
