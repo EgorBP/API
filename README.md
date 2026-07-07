@@ -1,8 +1,7 @@
 # API
 
 ### 🔹 Описание
-RESTful API на Python с использованием FastAPI, предоставляющее удобный и расширяемый интерфейс для работы с данными через HTTP-запросы.  
-> Вы можете протестировать уже развернутое [API](https://api-production-8e0b.up.railway.app/docs) и [Бота](https://t.me/GifRepositoryBot).
+Полностью асинхронный API на Python с использованием FastAPI и PostgreSQL, предоставляющий удобный и расширяемый интерфейс для работы с данными через HTTP-запросы.  
 
 ### ✨ Основные возможности
 - Быстрый запуск через [Docker](#-запуск-через-docker) или локально с [Python](#-запуск-через-python)  
@@ -20,7 +19,7 @@ RESTful API на Python с использованием FastAPI, предост�
 - **`Dockerfile`** — инструкции для создания Docker-образа
 - **`docker-compose.yml`** — конфигурация контейнеров для развёртывания
 - **`docker-compose.dev.yml`** — конфигурация для локальной разработки
-- **`pyproject.toml`** — зависимости проекта (управляется через uv)
+- **`pyproject.toml` + `uv.lock`** — зависимости проекта
 
 ## ⚙️ Установка и запуск
 
@@ -45,37 +44,21 @@ docker compose up --build
 > Документация доступна через Swagger UI: [`http://127.0.0.1:8000/docs`](http://127.0.0.1:8000/docs)  
 > Или через ReDoc: [`http://127.0.0.1:8000/redoc`](http://127.0.0.1:8000/redoc)
 
-### 🐍 Запуск через Python
-1. Измените *`DATABASE_URL`* в `.env` на ваш реальный адрес БД.
-2. Создайте виртуальное окружение и активируйте его:
-```python
-python -m venv .venv
-```
-##### Для Windows
+### 🐍 Запуск через Python (UV)
+1. Измените значения полей в `.env` на данные вашего реального адреса БД.
+2. Установите зависимости:
 ```bash
-.venv\Scripts\activate
+uv sync --frozen
 ```
-##### Для Linux/macOS
+3. Выполните миграции:
 ```bash
-source .venv/bin/activate
+uv run alembic upgrade head
 ```
-3. Установите зависимости:
-```bash
-uv sync
-```
-Или через pip:
-```bash
-pip install -e .
-```
-4. Выполните миграции:
-```bash
-alembic upgrade head
-```
-5. Запустите приложение:
+4. Запустите приложение:
 ```bash
 uv run uvicorn app.main:app --reload
 ```
-6. API будет доступен по адресу:
+5. API будет доступен по адресу:
 [`http://127.0.0.1:8000`](http://127.0.0.1:8000)
 > Документация доступна через Swagger UI: [`http://127.0.0.1:8000/docs`](http://127.0.0.1:8000/docs)  
 > Или через ReDoc: [`http://127.0.0.1:8000/redoc`](http://127.0.0.1:8000/redoc)
