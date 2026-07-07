@@ -19,7 +19,8 @@ RESTful API на Python с использованием FastAPI, предост�
 - **`.env.docker.example`** — пример конфигурационного файла для Docker
 - **`Dockerfile`** — инструкции для создания Docker-образа
 - **`docker-compose.yml`** — конфигурация контейнеров для развёртывания
-- **`requirements.txt`** — зависимости проекта
+- **`docker-compose.dev.yml`** — конфигурация для локальной разработки
+- **`pyproject.toml`** — зависимости проекта (управляется через uv)
 
 ## ⚙️ Установка и запуск
 
@@ -60,7 +61,11 @@ source .venv/bin/activate
 ```
 3. Установите зависимости:
 ```bash
-pip install -r requirements.txt
+uv sync
+```
+Или через pip:
+```bash
+pip install -e .
 ```
 4. Выполните миграции:
 ```bash
@@ -68,9 +73,32 @@ alembic upgrade head
 ```
 5. Запустите приложение:
 ```bash
-uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload
 ```
 6. API будет доступен по адресу:
 [`http://127.0.0.1:8000`](http://127.0.0.1:8000)
 > Документация доступна через Swagger UI: [`http://127.0.0.1:8000/docs`](http://127.0.0.1:8000/docs)  
 > Или через ReDoc: [`http://127.0.0.1:8000/redoc`](http://127.0.0.1:8000/redoc)
+
+## 🧪 Тестирование
+
+Проект содержит **34 теста** (integration, unit, database).
+
+### Запуск тестов
+
+1. Запустите PostgreSQL для разработки:
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+
+2. Создайте тестовую базу данных:
+```bash
+docker compose -f docker-compose.dev.yml exec db psql -U postgres -c "CREATE DATABASE test_pet_project;"
+```
+
+3. Запустите тесты:
+```bash
+uv run pytest tests/ -v
+```
+
+Подробная документация по тестированию: [TESTING.md](TESTING.md)

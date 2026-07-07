@@ -1,19 +1,29 @@
 services:
   api:
     build: .
+    container_name: fastapi_app
     ports:
       - "8000:8000"
     env_file:
       - ./.env.docker
     depends_on:
       - db
+      - redis
 
   db:
     image: postgres:17
+    container_name: postgres_container
     env_file:
       - ./.env.docker
     volumes:
       - postgres_data:/var/lib/postgresql/data
+  
+  redis:
+    image: redis:7-alpine
+    container_name: redis_container
+    volumes:
+      - redis_data:/data
 
 volumes:
   postgres_data:
+  redis_data:
