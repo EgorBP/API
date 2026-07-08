@@ -4,7 +4,7 @@ from sqlalchemy.pool import NullPool
 from httpx import AsyncClient, ASGITransport
 from app.models import Base
 from app.main import app
-from app.database import get_db
+from app.core.database import get_db
 from environs import Env
 
 

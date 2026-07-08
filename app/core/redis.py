@@ -5,7 +5,7 @@ from fastapi import Request
 async def create_redis_client() -> Redis:
     """Создает пул и возвращает клиент Redis."""
     pool = ConnectionPool(
-        host="localhost",
+        host="redis",
         port=6379,
         decode_responses=True,
         max_connections=20
