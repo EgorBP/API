@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from app.schemas import SearchOut
-from app.database import get_db
+from app.core.database import get_db
 from app.services import get_user_gifs_with_tags
 from typing import Optional, List
 

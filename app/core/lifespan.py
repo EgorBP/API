@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from app.redis import create_redis_client, close_redis_client
+from app.core.redis import create_redis_client, close_redis_client
 from fastapi import FastAPI
 
 
