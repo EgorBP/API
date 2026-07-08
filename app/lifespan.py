@@ -1,16 +1,12 @@
 from contextlib import asynccontextmanager
-import redis.asyncio as redis
+from app.redis import create_redis_client, close_redis_client
 from fastapi import FastAPI
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.redis = redis.Redis(
-        host="redis",
-        port=6379,
-        decode_responses=True
-    )
-
+    app.state.redis = await create_redis_client()
+    
     yield
 
-    await app.state.redis.close()
+    await close_redis_client(app.state.redis)
