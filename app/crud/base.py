@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import InstrumentedAttribute
-from sqlalchemy import select, update, delete, inspect
+from sqlalchemy import select, update, delete, inspect, Row
 from sqlalchemy.dialects.postgresql import insert
 from app.utils import is_valid_column_for_model, get_orm_columns
 from typing import Sequence, Any
@@ -62,10 +62,11 @@ class _BaseCRUD:
         self.async_session = async_session
         self.model = model
 
+    # Реализация через один запрос к БД. Возможно будет грузить базу больше чем простая проверка на существование 
     async def create_instance(
             self,
             values: dict[InstrumentedAttribute, Any],
-    ):
+    ) -> Row:
         """
         Создаёт новую запись в таблице или возвращает существующую при конфликте.
 
