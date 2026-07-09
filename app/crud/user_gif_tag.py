@@ -3,10 +3,9 @@ from app.crud import _BaseCRUD
 from app.models import UserGifTag
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from typing import Sequence
-from sqlalchemy import select, update, delete, inspect, Row
+from sqlalchemy import select, Row
 from typing import TypeAlias, Any
 from app.models import User, Gif, Tag
-from app.utils.sqlalchemy_helpers import is_valid_column_for_model
 
 JoinModel: TypeAlias = type[User | Gif | Tag]
 
@@ -48,8 +47,10 @@ class UserGifTagCRUD(_BaseCRUD):
             self,
             select_columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute,
             join_models: Sequence[JoinModel] | JoinModel | None = None,
-            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None
+            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
+            scalar: bool = False
     ) ->  Sequence[Row[tuple]]:
+        
         if not select_columns:
             raise ValueError("Необходимо передать хотя бы одну колонку")
         
@@ -76,6 +77,8 @@ class UserGifTagCRUD(_BaseCRUD):
                     values = (values,)
 
                 stmt = stmt.where(column.in_(values))
-
+    
         result = await self.async_session.execute(stmt)
+        if scalar:
+            result = result.scalars()
         return result.all()
