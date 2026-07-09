@@ -7,7 +7,7 @@ async def create_redis_client() -> Redis:
     """Создает пул и возвращает клиент Redis."""
     pool = ConnectionPool(
         host=settings.REDIS_HOST,
-        port=settings.POSTGRES_PORT,
+        port=settings.REDIS_PORT,
         decode_responses=True,
         max_connections=20
     )

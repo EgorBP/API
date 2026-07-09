@@ -37,4 +37,3 @@ class TagsCRUD(_BaseCRUD):
         return await super().create_instance({
             Tag.tag: tag
         })
-    
