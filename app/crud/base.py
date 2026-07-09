@@ -66,7 +66,7 @@ class _BaseCRUD:
     async def create_instance(
             self,
             values: dict[InstrumentedAttribute, Any],
-    ) -> Row:
+    ) -> Row[tuple[Any]]:
         """
         Создаёт новую запись в таблице или возвращает существующую при конфликте.
 
@@ -117,7 +117,7 @@ class _BaseCRUD:
             self,
             columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute | None = None,
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None
-    ):
+    ) -> list[Row[tuple[Any]]]:
         """
         Универсальная функция получения записей с фильтрацией по колонкам.
     
@@ -158,7 +158,7 @@ class _BaseCRUD:
             values: dict[InstrumentedAttribute, Any],
             *,
             filters: dict[InstrumentedAttribute, Any] | None = None,
-    ):
+    ) -> Row:
         """
         Универсальная функция обновления одной записи в таблице модели.
 

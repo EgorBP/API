@@ -3,6 +3,7 @@ from app.schemas import SearchOut
 from app.core.database import get_db
 from app.services import get_user_gifs_with_tags
 from typing import Optional, List
+from app.core.redis import get_redis
 
 
 router = APIRouter()
@@ -12,7 +13,8 @@ router = APIRouter()
 async def search_gifs(
         tg_user_id: int = Query(),
         tags: Optional[List[str]] = Query(None),
-        db=Depends(get_db)
+        db=Depends(get_db),
+        redis=Depends(get_redis)
 ):
     """
     Поиск GIF по тегам для конкретного пользователя.
@@ -30,7 +32,7 @@ async def search_gifs(
         - **tg_gif_id**: str — идентификатор GIF в Telegram
         - **tags**: list[str] — список тегов, связанных с GIF
     """
-    data = await get_user_gifs_with_tags(db, tg_user_id=tg_user_id, tags=tags)
+    data = await get_user_gifs_with_tags(db, redis, tg_user_id=tg_user_id, tags=tags)
     if not data:
         raise HTTPException(status_code=404, detail="User not found")
     

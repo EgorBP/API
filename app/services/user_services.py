@@ -1,13 +1,15 @@
 import asyncio
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import UserGifTag, User, Gif, Tag
 from app.crud import UsersCRUD, UserGifTagCRUD, TagsCRUD, GifsCRUD
 from typing import Sequence
+from redis.asyncio import Redis
+import json
 
 
 async def get_user_gifs_with_tags(
         async_session: AsyncSession,
+        redis: Redis,
         user_id: int | None = None,
         tg_user_id: int | None = None,
         tg_gifs_id: Sequence[str] | str = None,
@@ -46,6 +48,7 @@ async def get_user_gifs_with_tags(
     Если указаны одновременно `user_id` и `tg_user_id`, приоритет имеет `user_id`.
 
     :param async_session: Объект асинхронной сессии SQLAlchemy.
+    :param redis: Объект асинхронной сессии Redis.
     :param user_id: внутренний ID пользователя (опционально).
     :param tg_user_id: Telegram ID пользователя (опционально).
     :param tg_gifs_id: один или несколько Telegram ID гифок для фильтрации (опционально).
@@ -54,7 +57,9 @@ async def get_user_gifs_with_tags(
              или None, если пользователь не найден.
     """
     if user_id is None and tg_user_id is None:
-        return None
+        raise KeyError("Необходимо передать user_id или tg_user_id")
+    
+    user_gif_tag_crud = UserGifTagCRUD(async_session)
 
     if isinstance(tg_gifs_id, str):
         tg_gifs_id = (tg_gifs_id,)
@@ -62,36 +67,58 @@ async def get_user_gifs_with_tags(
     if isinstance(tags, str):
         tags = (tags,)
 
-    stmt = (
-        select(
+    # Кеширование
+    tags = tags or []
+    normalized_tags = sorted([tag.strip() for tag in tags])
+    tags_string = ",".join(normalized_tags) if normalized_tags else "all"
+    tg_gifs_id = tg_gifs_id or []
+    normalized_tg_gifs_id = sorted([tg_gif_id.strip() for tg_gif_id in tg_gifs_id])
+    tg_gifs_id_string = ",".join(normalized_tg_gifs_id) if normalized_tg_gifs_id else "all"
+
+    cache_key_template = "tg_user_id:{{tg_user_id}}:tg_gifs_id:{tg_gifs_id_string}:tags:{tags_string}"
+    cache_key_template = cache_key_template.format(tags_string=tags_string, tg_gifs_id_string=tg_gifs_id_string)
+
+    if not tg_user_id:
+        tg_user_id = await redis.get(f"user_id:{user_id}")
+    if tg_user_id:
+        cache_key = cache_key_template.format(tg_user_id=tg_user_id)
+        cached_data = await redis.get(cache_key)
+        if cached_data:
+            return json.loads(cached_data)
+    
+    filters = {}
+    if tg_gifs_id:
+        filters[Gif.tg_gif_id] = tg_gifs_id
+    if user_id is not None:
+        filters[UserGifTag.user_id] = user_id
+    else:
+        filters[User.tg_id] = tg_user_id
+
+    rows = await user_gif_tag_crud.get_instances_with_join(
+        select_columns=[
             UserGifTag.user_id,
             UserGifTag.gif_id,
             User.tg_id,
             Gif.tg_gif_id,
-            Tag.tag,
-        )
-        .select_from(UserGifTag)
-        .join(User, UserGifTag.user_id == User.id)
-        .join(Gif, UserGifTag.gif_id == Gif.id)
-        .join(Tag, UserGifTag.tag_id == Tag.id)
+            Tag.tag
+        ],
+        join_models=[
+            User, 
+            Gif, 
+            Tag
+        ],
+        filters=filters
     )
-
-    if user_id is not None:
-        stmt = stmt.where(UserGifTag.user_id == user_id)
-    else:
-        stmt = stmt.where(User.tg_id == tg_user_id)
-
-    if tg_gifs_id:
-        stmt = stmt.where(Gif.tg_gif_id.in_(tg_gifs_id))
-
-    result = await async_session.execute(stmt)
-    rows = result.all()
-
+    
     if not rows:
         return None
 
     first = rows[0]
     resolved_user_id = user_id if user_id is not None else first.user_id
+    resolved_tg_user_id = tg_user_id if tg_user_id is not None else first.tg_id
+    
+    cache_key = cache_key_template.format(tg_user_id=resolved_tg_user_id)
+    await redis.set(f"user_id:{user_id}", resolved_tg_user_id, ex=600)
 
     gifs_map: dict[int, dict] = {}
 
@@ -114,65 +141,86 @@ async def get_user_gifs_with_tags(
             gif for gif in gifs_data
             if tags_set.issubset(set(gif['tags']))
         ]
-
-    return {
+        
+    final_data = {
         'id': resolved_user_id,
-        'tg_user_id': first.tg_id,
+        'tg_user_id': resolved_tg_user_id,
         'gifs_data': gifs_data,
     }
+    
+    await redis.set(cache_key, json.dumps(final_data), ex=300)
+
+    return final_data
 
 
 async def get_all_user_tags(
         async_session: AsyncSession,
-        user_id: int | None = None,
-        tg_user_id: int | None = None,
+        redis: Redis,
+        # user_id: int | None = None,
+        tg_user_id: int,
 ):
     """
     Возвращает все уникальные теги, связанные с GIF пользователя.
 
-    Можно указать пользователя по внутреннему `user_id` или по Telegram ID `tg_user_id`.
-    Если оба параметра отсутствуют, функция возвращает None.
-
-    Если указаны одновременно `user_id` и `tg_user_id`, приоритет имеет `user_id`.
-
     :param async_session: Объект асинхронной сессии SQLAlchemy.
-    :param user_id: внутренний ID пользователя (опционально).
-    :param tg_user_id: Telegram ID пользователя (опционально).
-    :return: множество уникальных тегов (`set[str]`) или None, если пользователь не найден.
+    :param redis: Объект асинхронной сессии Redis.
+    :param tg_user_id: Telegram ID пользователя.
+    :return: Множество уникальных тегов (`set[str]`) или None, если пользователь не найден.
     """
-    if user_id is None and tg_user_id is None:
-        return None
+    # if user_id is None and tg_user_id is None:
+    #     raise KeyError("Необходимо передать user_id или tg_user_id")
+    
+    user_gif_tag_crud = UserGifTagCRUD(async_session)
 
-    stmt = (
-        select(Tag.tag)
-        .select_from(UserGifTag)
-        .join(User, UserGifTag.user_id == User.id)
-        .join(Gif, UserGifTag.gif_id == Gif.id)
-        .join(Tag, UserGifTag.tag_id == Tag.id)
+    cache_key_template = "tg_user_id:{tg_user_id}:all_user_tags"
+    
+    # if not tg_user_id:
+    #     tg_user_id = await redis.get(f"user_id:{user_id}")
+    # if tg_user_id:
+    cache_key = cache_key_template.format(tg_user_id=tg_user_id)
+    cached_data = await redis.get(cache_key)
+    if cached_data:
+        return json.loads(cached_data)
+    
+    filters = {}
+    join_models = [Tag]
+    # if user_id is not None:
+    #     filters[UserGifTag.user_id] = user_id
+    # else:
+    join_models.append(User)
+    filters[User.tg_id] = tg_user_id
+
+    tags = await user_gif_tag_crud.get_instances_with_join(
+        select_columns=[
+            Tag.tag
+        ],
+        join_models=join_models,
+        filters=filters,
+        scalar=True
     )
-
-    if user_id is not None:
-        stmt = stmt.where(UserGifTag.user_id == user_id)
-    else:
-        stmt = stmt.where(User.tg_id == tg_user_id)
-
-    result = await async_session.execute(stmt)
-    tags = result.scalars().all()
 
     if not tags:
         return None
+    tags = list(set(tags))
 
-    return set(tags)
+    # resolved_tg_user_id = tg_user_id if tg_user_id is not None else result.scalars().tg_id
+    # cache_key = cache_key_template.format(tg_user_id=resolved_tg_user_id)
+    # await redis.set(f"user_id:{user_id}", resolved_tg_user_id, ex=600)
+    await redis.set(cache_key, json.dumps(tags), ex=300)
+
+    return tags
 
 
 async def set_new_user_tags_on_gif(
         async_session: AsyncSession,
+        redis: Redis,
         tg_user_id: int,
         tg_gif_id: str,
         tags: Sequence[str] | str,
 ):
     """
     Добавляет (или обновляет) связь между пользователем, гифкой и её тегами.
+    Делает commit если операция прошла успешно и rollback в случае возникновения ошибок. 
 
     Функция гарантирует, что:
 
@@ -181,9 +229,10 @@ async def set_new_user_tags_on_gif(
     - старые теги будут удалены.
 
     :param async_session: Объект асинхронной сессии SQLAlchemy.
+    :param redis: Объект асинхронной сессии Redis.
     :param tg_user_id: Telegram ID пользователя.
     :param tg_gif_id: Telegram ID гифки.
-    :param tags: один тег или список тегов, которые будут связаны с гифкой.
+    :param tags: Один тег или список тегов, которые будут связаны с гифкой.
     :return: None (изменения фиксируются в базе данных через session).
     """
     
@@ -194,9 +243,9 @@ async def set_new_user_tags_on_gif(
     if isinstance(tags, (str, tuple)):
         tags = [tags]
 
-    old_data = await get_user_gifs_with_tags(async_session, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id)
+    old_data = await get_user_gifs_with_tags(async_session, redis, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id)
 
-    # TODO: Можно оптимизировать
+    # TODO: Можно оптимизировать, но нужно улучшать CRUD
     # Удаляем старые ненужные теги
     try:
         if old_data and old_data['gifs_data']:
@@ -216,10 +265,17 @@ async def set_new_user_tags_on_gif(
         tags = await asyncio.gather(
             *(tags_crud.create_tag(tag) for tag in tags)
         )
-    
-        for tag in tags:
-            await user_gif_tag_crud.create_user_gif_tag(user_id=user.id, gif_id=gif.id, tag_id=tag.id)
-            
+        
+        await asyncio.gather(
+            *(user_gif_tag_crud.create_user_gif_tag(user_id=user.id, gif_id=gif.id, tag_id=tag.id) for tag in tags)
+        )
+
+        keys = []
+        async for key in redis.scan_iter(f"tg_user_id:{tg_user_id}:*"):
+            keys.append(key)
+        if keys:
+            await redis.unlink(*keys)
+
         await async_session.commit()
     except Exception:
         await async_session.rollback()
@@ -228,10 +284,25 @@ async def set_new_user_tags_on_gif(
 
 async def delete_user_gif_tags(
         async_session: AsyncSession,
+        redis: Redis,
         tg_user_id: int,
         gif_id: str,
-        gif_id_type: str | None = None,
+        gif_id_type: str | None = None
 ):
+    """
+    Удаляет GIF вместе с тегами для конкретного пользователя. 
+    Делает commit если операция прошла успешно и rollback в случае возникновения ошибок.
+    
+    Удаляет весь кэш пользователя.
+
+    :param async_session: Объект асинхронной сессии SQLAlchemy.
+    :param redis: Объект асинхронной сессии Redis.
+    :param tg_user_id: Telegram ID пользователя.
+    :param gif_id: ID для GIF которое нужно удалить у юзера.
+    :param gif_id_type: Тип ID: 'tg' - Telegram ID, 'db' - ID из внутренней базы.
+
+    :return: Количество удаленных строк
+    """
     gifs_crud = GifsCRUD(async_session)
     users_crud = UsersCRUD(async_session)
     user_gif_tag_crud = UserGifTagCRUD(async_session)
@@ -252,7 +323,13 @@ async def delete_user_gif_tags(
             UserGifTag.gif_id: gif_id,
         })
         await async_session.commit()
-    
+        
+        keys = []
+        async for key in redis.scan_iter(f"tg_user_id:{tg_user_id}:*"):
+            keys.append(key)
+        if keys:
+            await redis.unlink(*keys)     
+            
         return result
     
     except Exception:

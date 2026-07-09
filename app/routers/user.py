@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.schemas import GifOut, GifUpdate
 from app.core.database import get_db
 from app.services import get_user_gifs_with_tags, set_new_user_tags_on_gif, get_all_user_tags, delete_user_gif_tags
+from app.core.redis import get_redis
 
 
 router = APIRouter(
@@ -13,7 +14,8 @@ router = APIRouter(
 async def get_gif(
         tg_user_id: int,
         tg_gif_id: str,
-        db=Depends(get_db)
+        db=Depends(get_db),
+        redis=Depends(get_redis)
 ):
     """
     Получить GIF пользователя по его Telegram ID и идентификатору GIF.
@@ -29,7 +31,7 @@ async def get_gif(
     """
     # Если что-то не найдено при попытке обращения выбросит ошибку
     try:
-        data = (await get_user_gifs_with_tags(db, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id))['gifs_data'][0]
+        data = (await get_user_gifs_with_tags(db, redis, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id))['gifs_data'][0]
     except:
         raise HTTPException(status_code=404, detail="Data not found")
 
@@ -41,7 +43,8 @@ async def update_gif_tags(
         tg_user_id: int,
         tg_gif_id: str,
         gif_data: GifUpdate,
-        db=Depends(get_db)
+        db=Depends(get_db),
+        redis=Depends(get_redis)
 ):
     """
     Обновить список тегов для конкретного GIF пользователя.
@@ -52,7 +55,7 @@ async def update_gif_tags(
 
     **Returns:** HTTP 204 если операция прошла успешно
     """
-    await set_new_user_tags_on_gif(db, tg_user_id, tg_gif_id, gif_data.tags)
+    await set_new_user_tags_on_gif(db, redis, tg_user_id, tg_gif_id, gif_data.tags)
     # return get_user_gifs_with_tags(db, tg_id=tg_user_id, tg_gifs_id=tg_gif_id)['gifs_data'][0]
     return
 
@@ -62,7 +65,8 @@ async def delete_gif_tags(
         tg_user_id: int,
         gif_id: str,
         gif_id_type: str | None = Query(None),
-        db=Depends(get_db)
+        db=Depends(get_db),
+        redis=Depends(get_redis)
 ):
     """
     Удалить все связи тегов с конкретным GIF пользователя.
@@ -79,6 +83,7 @@ async def delete_gif_tags(
     """
     result = await delete_user_gif_tags(
         async_session=db,
+        redis=redis,
         tg_user_id=tg_user_id,
         gif_id=gif_id,
         gif_id_type=gif_id_type,
@@ -92,7 +97,8 @@ async def delete_gif_tags(
 @router.get('/{tg_user_id}/tags', response_model=list[str])
 async def get_user_tags(
         tg_user_id: int,
-        db=Depends(get_db)
+        db=Depends(get_db),
+        redis=Depends(get_redis)
 ):
     """
     Получение всех тегов пользователя по его Telegram ID.
@@ -103,7 +109,7 @@ async def get_user_tags(
     **Возвращает**:
     Список тегов (list[str]) или HTTP 404, если пользователь не найден.
     """
-    data = await get_all_user_tags(db, tg_user_id=tg_user_id)
+    data = await get_all_user_tags(db, redis, tg_user_id=tg_user_id)
     if not data:
         raise HTTPException(status_code=404, detail="User not found")
 
