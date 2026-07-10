@@ -4,7 +4,6 @@ from app.core.database import get_db
 from app.services import get_user_gifs_with_tags, set_new_user_tags_on_gif, get_all_user_tags, delete_user_gif_tags
 from app.core.redis import get_redis
 
-
 router = APIRouter(
     prefix='/user'
 )
@@ -29,13 +28,11 @@ async def get_gif(
     - **tg_gif_id**: str — идентификатор GIF в Telegram
     - **tags**: list[str] — список тегов GIF
     """
-    # Если что-то не найдено при попытке обращения выбросит ошибку
-    try:
-        data = (await get_user_gifs_with_tags(db, redis, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id))['gifs_data'][0]
-    except:
+    data = (await get_user_gifs_with_tags(db, redis, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id)).get('gifs_data')
+    if not data:
         raise HTTPException(status_code=404, detail="Data not found")
 
-    return data
+    return data[0]
 
 
 @router.put('/{tg_user_id}/gif/{tg_gif_id}', status_code=status.HTTP_204_NO_CONTENT)

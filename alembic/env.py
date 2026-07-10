@@ -5,21 +5,21 @@ from sqlalchemy import pool
 
 from alembic import context
 
-from environs import Env
 from app.models import Base
+from app.core.log_config import setup_logging
+from app.settings import settings
 
 
-env = Env()
-env.read_env()
+setup_logging()
 
-POSTGRES_USER = env("POSTGRES_USER")
-POSTGRES_PASSWORD = env("POSTGRES_PASSWORD")
-POSTGRES_DB = env("POSTGRES_DB")
-POSTGRES_HOST = env("POSTGRES_HOST")
-POSTGRES_PORT = env("POSTGRES_PORT")
 
 DATABASE_URL_SYNC = (
-    f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    f"postgresql+psycopg://"
+    f"{settings.POSTGRES_USER}:"
+    f"{settings.POSTGRES_PASSWORD}@"
+    f"{settings.POSTGRES_HOST}:"
+    f"{settings.POSTGRES_PORT}/"
+    f"{settings.POSTGRES_DB}"
 )
 
 # this is the Alembic Config object, which provides
@@ -28,8 +28,8 @@ config = context.config
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# if config.config_file_name is not None:
+#     fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
 # for 'autogenerate' support

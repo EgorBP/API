@@ -4,8 +4,9 @@ from app.core.database import get_db
 from app.services import get_user_gifs_with_tags
 from typing import Optional, List
 from app.core.redis import get_redis
+import logging
 
-
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
