@@ -34,7 +34,7 @@ cp .env.docker.example .env.docker
 cp .env.example .env
 ```
 
-### 🐳 Запуск через Docker
+### 🐳 Запуск через Docker (Рекомендуется)
 1. Соберите и запустите контейнеры:
 ```bash
 docker compose up --build
