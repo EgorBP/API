@@ -5,6 +5,9 @@ from app.crud import UsersCRUD, UserGifTagCRUD, TagsCRUD, GifsCRUD
 from typing import Sequence
 from redis.asyncio import Redis
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 async def get_user_gifs_with_tags(
@@ -279,6 +282,7 @@ async def set_new_user_tags_on_gif(
         await async_session.commit()
     except Exception:
         await async_session.rollback()
+        logger.exception("Error when change/update tags for user GIF")
         raise
 
 
@@ -334,4 +338,5 @@ async def delete_user_gif_tags(
     
     except Exception:
         await async_session.rollback()
+        logger.exception("Error when delete user GIF and tags")
         raise
