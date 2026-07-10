@@ -6,7 +6,7 @@ from sqlalchemy import pool
 from alembic import context
 
 from app.models import Base
-from app.core.log_config import setup_logging
+from app.core.logging.config import setup_logging
 from app.settings import settings
 
 

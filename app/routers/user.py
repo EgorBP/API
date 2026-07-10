@@ -4,6 +4,7 @@ from app.core.database import get_db
 from app.services import get_user_gifs_with_tags, set_new_user_tags_on_gif, get_all_user_tags, delete_user_gif_tags
 from app.core.redis import get_redis
 
+
 router = APIRouter(
     prefix='/user'
 )

@@ -7,7 +7,7 @@ from redis.asyncio import Redis
 import json
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("app.user")
 
 
 async def get_user_gifs_with_tags(
@@ -60,7 +60,8 @@ async def get_user_gifs_with_tags(
              или None, если пользователь не найден.
     """
     if user_id is None and tg_user_id is None:
-        raise KeyError("Необходимо передать user_id или tg_user_id")
+        logger.error("Missing one of the required fields: user_id, tg_user_id")
+        raise ValueError("Необходимо передать user_id или tg_user_id")
     
     user_gif_tag_crud = UserGifTagCRUD(async_session)
 
@@ -87,6 +88,14 @@ async def get_user_gifs_with_tags(
         cache_key = cache_key_template.format(tg_user_id=tg_user_id)
         cached_data = await redis.get(cache_key)
         if cached_data:
+            logger.info(
+                "Get user gifs with tags from cache",
+                extra={
+                    "source": "database",
+                    "user_id": user_id,
+                    "tg_user_id": tg_user_id,
+                }
+            )
             return json.loads(cached_data)
     
     filters = {}
@@ -152,6 +161,22 @@ async def get_user_gifs_with_tags(
     }
     
     await redis.set(cache_key, json.dumps(final_data), ex=300)
+    
+    logger.info(
+        "Set new cache for 300s",
+        extra={
+            "user_id": resolved_user_id,
+            "tg_user_id": resolved_tg_user_id,
+        }
+    )
+    logger.info(
+        "Get user gifs with tags from database",
+        extra={
+            "source": "database",
+            "user_id": resolved_user_id,
+            "tg_user_id": resolved_tg_user_id,
+        }
+    )
 
     return final_data
 
@@ -171,7 +196,8 @@ async def get_all_user_tags(
     :return: Множество уникальных тегов (`set[str]`) или None, если пользователь не найден.
     """
     # if user_id is None and tg_user_id is None:
-    #     raise KeyError("Необходимо передать user_id или tg_user_id")
+    #     logger.error("Missing one of the required fields: user_id, tg_user_id")
+    #     raise ValueError("Необходимо передать user_id или tg_user_id")
     
     user_gif_tag_crud = UserGifTagCRUD(async_session)
 
@@ -183,6 +209,14 @@ async def get_all_user_tags(
     cache_key = cache_key_template.format(tg_user_id=tg_user_id)
     cached_data = await redis.get(cache_key)
     if cached_data:
+        logger.info(
+            "Get all user tags from cache",
+            extra={
+                "source": "cache",
+                # "user_id": user_id,
+                "tg_user_id": tg_user_id,
+            }
+        )
         return json.loads(cached_data)
     
     filters = {}
@@ -210,6 +244,22 @@ async def get_all_user_tags(
     # cache_key = cache_key_template.format(tg_user_id=resolved_tg_user_id)
     # await redis.set(f"user_id:{user_id}", resolved_tg_user_id, ex=600)
     await redis.set(cache_key, json.dumps(tags), ex=300)
+
+    logger.info(
+        "Set new cache for 300s",
+        extra={
+            # "user_id": resolved_user_id,
+            "tg_user_id": tg_user_id,
+        }
+    )
+    logger.info(
+        "Get all user tags from database",
+        extra={
+            "source": "database",
+            # "user_id": user_id,
+            "tg_user_id": tg_user_id,
+        }
+    )
 
     return tags
 
@@ -273,16 +323,31 @@ async def set_new_user_tags_on_gif(
             *(user_gif_tag_crud.create_user_gif_tag(user_id=user.id, gif_id=gif.id, tag_id=tag.id) for tag in tags)
         )
 
+        await async_session.commit()
+        logger.info(
+            "User GIF tags updated",
+            extra={
+                "tg_user_id": tg_user_id,
+                "tg_gif_id": tg_gif_id
+            }
+        )
+        
+        # Инвалидируем кэш
         keys = []
         async for key in redis.scan_iter(f"tg_user_id:{tg_user_id}:*"):
             keys.append(key)
         if keys:
             await redis.unlink(*keys)
+        logger.info(
+            "User cache invalidated",
+            extra={
+                "tg_user_id": tg_user_id,
+            }
+        )
 
-        await async_session.commit()
     except Exception:
         await async_session.rollback()
-        logger.exception("Error when change/update tags for user GIF")
+        logger.exception("Error when update tags for user GIF")
         raise
 
 
@@ -327,12 +392,26 @@ async def delete_user_gif_tags(
             UserGifTag.gif_id: gif_id,
         })
         await async_session.commit()
+        logger.info(
+            "User GIF deleted",
+            extra={
+                "tg_user_id": tg_user_id,
+                "gif_id": gif_id,
+                "gif_id_type": gif_id_type
+            }
+        )
         
         keys = []
         async for key in redis.scan_iter(f"tg_user_id:{tg_user_id}:*"):
             keys.append(key)
         if keys:
-            await redis.unlink(*keys)     
+            await redis.unlink(*keys)   
+        logger.info(
+            "User cache invalidated",
+            extra={
+                "tg_user_id": tg_user_id,
+            }
+        )
             
         return result
     
