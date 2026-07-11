@@ -11,7 +11,7 @@ LOGGING_CONFIG = {
         },
         "detailed": {
             "()": "app.core.logging.formatter.DetailedFormatter",
-            "format": "%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(funcName)s | %(extra_fields)s | %(message)s",
+            "format": "%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(funcName)s%(extra_fields)s | %(message)s",
         },
     },
 
@@ -44,6 +44,16 @@ LOGGING_CONFIG = {
             "handlers": ["default"],
             "propagate": False,
         },
+        "app.api.exceptions": {
+            "level": "INFO",
+            "handlers": ["default"],
+            "propagate": False,
+        },
+        "app.access": {
+            "level": "INFO",
+            "handlers": ["default"],
+            "propagate": False,
+        },
 
         "uvicorn": {
             "level": "INFO",
@@ -56,7 +66,7 @@ LOGGING_CONFIG = {
             "propagate": False,
         },
         "uvicorn.access": {
-            "level": "INFO",
+            "level": "WARNING",
             "handlers": ["default"],
             "propagate": False,
         },
