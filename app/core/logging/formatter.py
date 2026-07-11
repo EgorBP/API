@@ -14,6 +14,6 @@ class DetailedFormatter(logging.Formatter):
         if hasattr(record, "tg_user_id") and record.tg_user_id is not None:
             fields.append(f"tg_user_id={record.tg_user_id}")
 
-        record.extra_fields = " | ".join(fields)
+        record.extra_fields = f" | {' | '.join(fields)}" if fields else ""
 
         return super().format(record)

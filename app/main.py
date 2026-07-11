@@ -4,6 +4,8 @@ from app.routers import user, search
 from app.core.lifespan import lifespan
 from app.core.dependencies import verify_secret_key
 from app.core.logging.config import setup_logging
+from app.core.exceptions import AppExceptionHandlers
+from app.middleware.request_logging import request_logging_middleware
 
 
 setup_logging()
@@ -13,5 +15,7 @@ app = FastAPI(
     dependencies=[Depends(verify_secret_key)]
 )
 
+AppExceptionHandlers().register(app)
+app.middleware("http")(request_logging_middleware)
 app.include_router(search.router)
 app.include_router(user.router)

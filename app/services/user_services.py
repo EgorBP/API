@@ -107,7 +107,7 @@ async def get_user_gifs_with_tags(
         filters[User.tg_id] = tg_user_id
 
     rows = await user_gif_tag_crud.get_instances_with_join(
-        select_columns=[
+        columns=[
             UserGifTag.user_id,
             UserGifTag.gif_id,
             User.tg_id,
@@ -181,6 +181,7 @@ async def get_user_gifs_with_tags(
     return final_data
 
 
+# user_id тут пока не нужен, чтобы его получить нужно делать новый запрос в БД или в кэш, лучше этого избежать
 async def get_all_user_tags(
         async_session: AsyncSession,
         redis: Redis,
@@ -228,7 +229,7 @@ async def get_all_user_tags(
     filters[User.tg_id] = tg_user_id
 
     tags = await user_gif_tag_crud.get_instances_with_join(
-        select_columns=[
+        columns=[
             Tag.tag
         ],
         join_models=join_models,
@@ -347,7 +348,12 @@ async def set_new_user_tags_on_gif(
 
     except Exception:
         await async_session.rollback()
-        logger.exception("Error when update tags for user GIF")
+        logger.exception(
+            "Error when update tags for user GIF",
+            extra={
+                "tg_user_id": tg_user_id,
+            }
+        )
         raise
 
 
@@ -417,5 +423,10 @@ async def delete_user_gif_tags(
     
     except Exception:
         await async_session.rollback()
-        logger.exception("Error when delete user GIF and tags")
+        logger.exception(
+            "Error when delete user GIF and tags",
+            extra={
+                "tg_user_id": tg_user_id,
+            }
+        )
         raise
