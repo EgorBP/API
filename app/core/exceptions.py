@@ -85,6 +85,7 @@ class AppExceptionHandlers:
     async def _handle_operational_error(
         self,
         request: Request,
+        exc: OperationalError,
     ) -> JSONResponse:
         self.logger.exception(
             "Database operational error on %s %s",
@@ -99,6 +100,7 @@ class AppExceptionHandlers:
     async def _handle_sqlalchemy_error(
         self,
         request: Request,
+        exc: SQLAlchemyError,
     ) -> JSONResponse:
         self.logger.exception(
             "SQLAlchemy error on %s %s",
@@ -113,6 +115,7 @@ class AppExceptionHandlers:
     async def _handle_unhandled_exception(
         self,
         request: Request,
+        exc: Exception,
     ) -> JSONResponse:
         self.logger.exception(
             "Unhandled exception on %s %s",
