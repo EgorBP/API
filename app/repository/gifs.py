@@ -1,9 +1,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.crud import _BaseCRUD
+from app.repository import _BaseCRUD
 from app.models import Gif
 
 
-class GifsCRUD(_BaseCRUD):
+class GifRepository(_BaseCRUD):
     """
     CRUD для модели Gif.
     

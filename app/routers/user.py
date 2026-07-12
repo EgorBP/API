@@ -29,12 +29,13 @@ async def get_gif(
     - **tg_gif_id**: str — идентификатор GIF в Telegram
     - **tags**: list[str] — список тегов GIF
     """
-    data = (await get_user_gifs_with_tags(db, redis, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id)).get('gifs_data')
-    if not data:
+    data = await get_user_gifs_with_tags(db, redis, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id)
+    gif_data = data.get("gifs_data") if data else None
+
+    if not gif_data:
         raise HTTPException(status_code=404, detail="Data not found")
 
-    return data[0]
-
+    return gif_data[0]
 
 @router.put('/{tg_user_id}/gif/{tg_gif_id}', status_code=status.HTTP_204_NO_CONTENT)
 async def update_gif_tags(

@@ -1,6 +1,6 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.crud import UsersCRUD, GifsCRUD, TagsCRUD, UserGifTagCRUD
+from app.repository import UserRepository, GifRepository, TagRepository, UserGifTagRepository
 from app.models import User, Gif, Tag, UserGifTag
 
 
@@ -9,7 +9,7 @@ class TestUsersCRUD:
 
     async def test_create_user(self, db_session: AsyncSession):
         """Тест создания пользователя."""
-        crud = UsersCRUD(db_session)
+        crud = UserRepository(db_session)
         tg_id = 123456789
         
         user = await crud.create_user(tg_id=tg_id)
@@ -21,7 +21,7 @@ class TestUsersCRUD:
 
     async def test_create_duplicate_user(self, db_session: AsyncSession):
         """Тест создания пользователя с существующим tg_id."""
-        crud = UsersCRUD(db_session)
+        crud = UserRepository(db_session)
         tg_id = 987654321
         
         # Создаём первого пользователя
@@ -38,7 +38,7 @@ class TestUsersCRUD:
 
     async def test_get_user_by_tg_id(self, db_session: AsyncSession):
         """Тест получения пользователя по tg_id."""
-        crud = UsersCRUD(db_session)
+        crud = UserRepository(db_session)
         tg_id = 111222333
         
         # Создаём пользователя
@@ -53,7 +53,7 @@ class TestUsersCRUD:
 
     async def test_delete_user(self, db_session: AsyncSession):
         """Тест удаления пользователя."""
-        crud = UsersCRUD(db_session)
+        crud = UserRepository(db_session)
         tg_id = 444555666
         
         # Создаём пользователя
@@ -76,7 +76,7 @@ class TestGifsCRUD:
 
     async def test_create_gif(self, db_session: AsyncSession):
         """Тест создания GIF."""
-        crud = GifsCRUD(db_session)
+        crud = GifRepository(db_session)
         tg_gif_id = "test_gif_12345"
         
         gif = await crud.create_gif(tg_gif_id=tg_gif_id)
@@ -88,7 +88,7 @@ class TestGifsCRUD:
 
     async def test_create_duplicate_gif(self, db_session: AsyncSession):
         """Тест создания GIF с существующим tg_gif_id."""
-        crud = GifsCRUD(db_session)
+        crud = GifRepository(db_session)
         tg_gif_id = "duplicate_gif_id"
         
         # Создаём первый GIF
@@ -105,7 +105,7 @@ class TestGifsCRUD:
 
     async def test_get_gif_by_tg_gif_id(self, db_session: AsyncSession):
         """Тест получения GIF по tg_gif_id."""
-        crud = GifsCRUD(db_session)
+        crud = GifRepository(db_session)
         tg_gif_id = "search_gif_id"
         
         # Создаём GIF
@@ -120,7 +120,7 @@ class TestGifsCRUD:
 
     async def test_delete_gif(self, db_session: AsyncSession):
         """Тест удаления GIF."""
-        crud = GifsCRUD(db_session)
+        crud = GifRepository(db_session)
         tg_gif_id = "delete_gif_id"
         
         # Создаём GIF
@@ -143,7 +143,7 @@ class TestTagsCRUD:
 
     async def test_create_tag(self, db_session: AsyncSession):
         """Тест создания тега."""
-        crud = TagsCRUD(db_session)
+        crud = TagRepository(db_session)
         tag_name = "funny"
         
         tag = await crud.create_tag(tag=tag_name)
@@ -155,7 +155,7 @@ class TestTagsCRUD:
 
     async def test_create_duplicate_tag(self, db_session: AsyncSession):
         """Тест создания тега с существующим именем."""
-        crud = TagsCRUD(db_session)
+        crud = TagRepository(db_session)
         tag_name = "duplicate_tag"
         
         # Создаём первый тег
@@ -172,7 +172,7 @@ class TestTagsCRUD:
 
     async def test_get_multiple_tags(self, db_session: AsyncSession):
         """Тест получения нескольких тегов."""
-        crud = TagsCRUD(db_session)
+        crud = TagRepository(db_session)
         tag_names = ["cat", "dog", "bird"]
         
         # Создаём несколько тегов
@@ -194,9 +194,9 @@ class TestUserGifTagCRUD:
     @pytest.fixture
     async def setup_entities(self, db_session: AsyncSession):
         """Фикстура создаёт пользователя, GIF и тег для тестов."""
-        user_crud = UsersCRUD(db_session)
-        gif_crud = GifsCRUD(db_session)
-        tag_crud = TagsCRUD(db_session)
+        user_crud = UserRepository(db_session)
+        gif_crud = GifRepository(db_session)
+        tag_crud = TagRepository(db_session)
         
         user = await user_crud.create_user(tg_id=123456)
         gif = await gif_crud.create_gif(tg_gif_id="test_gif")
@@ -211,7 +211,7 @@ class TestUserGifTagCRUD:
 
     async def test_create_user_gif_tag(self, db_session: AsyncSession, setup_entities):
         """Тест создания связи пользователь-GIF-тег."""
-        crud = UserGifTagCRUD(db_session)
+        crud = UserGifTagRepository(db_session)
         
         relation = await crud.create_user_gif_tag(
             user_id=setup_entities["user_id"],
@@ -227,7 +227,7 @@ class TestUserGifTagCRUD:
 
     async def test_create_duplicate_user_gif_tag(self, db_session: AsyncSession, setup_entities):
         """Тест создания дублирующейся связи."""
-        crud = UserGifTagCRUD(db_session)
+        crud = UserGifTagRepository(db_session)
         
         # Создаём первую связь
         relation1 = await crud.create_user_gif_tag(
@@ -252,7 +252,7 @@ class TestUserGifTagCRUD:
 
     async def test_delete_user_gif_tag(self, db_session: AsyncSession, setup_entities):
         """Тест удаления связи пользователь-GIF-тег."""
-        crud = UserGifTagCRUD(db_session)
+        crud = UserGifTagRepository(db_session)
         
         # Создаём связь
         await crud.create_user_gif_tag(
@@ -285,8 +285,8 @@ class TestUserGifTagCRUD:
 
     async def test_cascade_delete(self, db_session: AsyncSession, setup_entities):
         """Тест каскадного удаления при удалении пользователя."""
-        user_crud = UsersCRUD(db_session)
-        ugt_crud = UserGifTagCRUD(db_session)
+        user_crud = UserRepository(db_session)
+        ugt_crud = UserGifTagRepository(db_session)
         
         # Создаём связь
         await ugt_crud.create_user_gif_tag(

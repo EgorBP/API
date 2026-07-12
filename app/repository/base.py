@@ -20,7 +20,7 @@ class _BaseCRUD:
         - Экземпляр класса привязывается к конкретной ORM-модели и асинхронной сессии:
             - async_session: AsyncSession — асинхронная сессия SQLAlchemy.
             - model: Subclass[Base] — класс ORM-модели.
-        - Во многих методах ожидается, что ключи словарей `values` и `filters` — это именно
+        - Во всех методах ожидается, что ключи словарей `values` и `filters` — это именно
           колонковые атрибуты модели (InstrumentedAttribute). Перед выполнением запросов
           производится валидация колонок.
         - Методы выполняют SQL-запросы через `self.async_session.execute(...)`, но НЕ выполняют
@@ -32,23 +32,23 @@ class _BaseCRUD:
 
     Пример использования:
     
-        crud = _BaseCRUD(async_session=session, model=User)
+        repository = _BaseCRUD(async_session=session, model=User)
         
         # вставка
         
-        row = await crud.create_instance({User.email: "a@example.com", User.name: "A"})
+        row = await repository.create_instance({User.email: "a@example.com", User.name: "A"})
         
         # выборка
         
-        rows = await crud.get_instances(filters={User.is_active: True})
+        rows = await repository.get_instances(filters={User.is_active: True})
         
         # обновление
         
-        updated = await crud.update_instance(instance_id=1, values={User.name: "B"})
+        updated = await repository.update_instance(instance_id=1, values={User.name: "B"})
         
         # удаление
         
-        deleted_count = await crud.delete_instances(filters={User.id: [2, 3]})
+        deleted_count = await repository.delete_instances(filters={User.id: [2, 3]})
     """
     def __init__(
             self,
@@ -119,7 +119,7 @@ class _BaseCRUD:
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None
     ) -> list[Row[tuple]]:
         """
-        Универсальная функция получения записей с фильтрацией по колонкам.
+        Универсальный метод получения записей с фильтрацией по колонкам.
     
         :param columns: Колонки для возврата. Если None — вернутся все.
         :param filters: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
@@ -160,7 +160,7 @@ class _BaseCRUD:
             filters: dict[InstrumentedAttribute, Any] | None = None,
     ) -> Row:
         """
-        Универсальная функция обновления одной записи в таблице модели.
+        Универсальный метод обновления одной записи в таблице модели.
 
         Метод обновляет **только одну запись**: либо по первичному ключу (`instance_id`), 
         либо по заданным фильтрам (`filters`). Возвращает все колонки обновлённой записи после выполнения операции.
@@ -206,7 +206,7 @@ class _BaseCRUD:
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
     ) -> int:
         """
-        Универсальная функция удаления записей.
+        Универсальный метод удаления записей.
     
         Можно удалить запись по первому найденному первичному ключу (instance_id) или по фильтрам.
         Приоритет имеет первичный ключ.

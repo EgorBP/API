@@ -1,9 +1,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Tag
-from app.crud import _BaseCRUD
+from app.repository import _BaseCRUD
 
 
-class TagsCRUD(_BaseCRUD):
+class TagRepository(_BaseCRUD):
     """
     CRUD для модели Tag.
 
