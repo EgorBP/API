@@ -27,7 +27,6 @@ class AppExceptionHandlers:
         app.add_exception_handler(IntegrityError, self._handle_integrity_error)
         app.add_exception_handler(OperationalError, self._handle_operational_error)
         app.add_exception_handler(SQLAlchemyError, self._handle_sqlalchemy_error)
-        app.add_exception_handler(Exception, self._handle_unhandled_exception)
 
     async def _handle_value_error(self, request: Request, exc: ValueError) -> JSONResponse:
         self.logger.warning(
@@ -110,21 +109,6 @@ class AppExceptionHandlers:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"detail": "Internal database error."},
-        )
-
-    async def _handle_unhandled_exception(
-        self,
-        request: Request,
-        exc: Exception,
-    ) -> JSONResponse:
-        self.logger.exception(
-            "Unhandled exception on %s %s",
-            request.method,
-            request.url.path,
-        )
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": "Unexpected internal server error."},
         )
 
     @staticmethod
