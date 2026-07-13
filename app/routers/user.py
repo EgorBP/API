@@ -30,7 +30,7 @@ async def get_gif(
     - **tags**: list[str] — список тегов GIF
     """
     data = await get_user_gifs_with_tags(db, redis, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id)
-    gif_data = data.get("gifs_data") if data else None
+    gif_data = data.gifs_data if data else None
 
     if not gif_data:
         raise HTTPException(status_code=404, detail="Data not found")

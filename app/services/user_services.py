@@ -1,6 +1,9 @@
 import asyncio
+from codecs import ignore_errors
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import UserGifTag, User, Gif, Tag
+from app.schemas import SearchOut, GifOut
 from app.repository import UserRepository, UserGifTagRepository, TagRepository, GifRepository, SearchRepository
 from typing import Sequence
 from redis.asyncio import Redis
@@ -16,8 +19,8 @@ async def get_user_gifs_with_tags(
         user_id: int | None = None,
         tg_user_id: int | None = None,
         tg_gifs_id: Sequence[str] | str = None,
-        tags: Sequence[str] | str = None,
-):
+        tags: set[str] | str = None,
+) -> SearchOut | None:
     """
     Возвращает гифки пользователя с их тегами в виде вложенного словаря.
 
@@ -52,11 +55,11 @@ async def get_user_gifs_with_tags(
 
     :param async_session: Объект асинхронной сессии SQLAlchemy.
     :param redis: Объект асинхронной сессии Redis.
-    :param user_id: внутренний ID пользователя (опционально).
+    :param user_id: Внутренний ID пользователя (опционально).
     :param tg_user_id: Telegram ID пользователя (опционально).
-    :param tg_gifs_id: один или несколько Telegram ID гифок для фильтрации (опционально).
-    :param tags: один или несколько тегов для фильтрации гифок (опционально).
-    :return: словарь с данными пользователя, гифок и тегов в формате, описанном выше,
+    :param tg_gifs_id: Один или несколько Telegram ID гифок для фильтрации (опционально).
+    :param tags: Один или несколько тегов для фильтрации гифок (опционально).
+    :return: Словарь с данными пользователя, гифок и тегов в формате, описанном выше,
              или None, если пользователь не найден.
     """
     if user_id is None and tg_user_id is None:
@@ -96,7 +99,7 @@ async def get_user_gifs_with_tags(
                     "tg_user_id": tg_user_id,
                 }
             )
-            return json.loads(cached_data)
+            return SearchOut.model_validate_json(cached_data)
     
     rows = await search_repository.search_user_gifs_with_tags(
         user_id=user_id,
@@ -123,22 +126,22 @@ async def get_user_gifs_with_tags(
     cache_key = cache_key_template.format(tg_user_id=resolved_tg_user_id)
     await redis.set(f"user_id:{user_id}", resolved_tg_user_id, ex=600)
 
-    data = [
-        {
-            "id": row.gif_id,
-            "tg_gif_id": row.tg_gif_id,
-            "tags": row.tags
-        }
+    gifs_data = [
+        GifOut(
+            id=row.gif_id,
+            tg_gif_id=row.tg_gif_id,
+            tags=row.tags
+        )
         for row in rows
     ]
         
-    final_data = {
-        'id': resolved_user_id,
-        'tg_user_id': resolved_tg_user_id,
-        'gifs_data': data,
-    }
+    final_data = SearchOut(
+        id=resolved_user_id,
+        tg_user_id=resolved_tg_user_id,
+        gifs_data=gifs_data,
+    )
     
-    await redis.set(cache_key, json.dumps(final_data), ex=300)
+    await redis.set(cache_key, final_data.model_dump_json(), ex=300)
     
     logger.info(
         "Set new cache for 300s",
@@ -165,7 +168,7 @@ async def get_all_user_tags(
         redis: Redis,
         # user_id: int | None = None,
         tg_user_id: int,
-):
+) -> set[str] | None:
     """
     Возвращает все уникальные теги, связанные с GIF пользователя.
 
@@ -178,7 +181,7 @@ async def get_all_user_tags(
     #     logger.error("Missing one of the required fields: user_id, tg_user_id")
     #     raise ValueError("Необходимо передать user_id или tg_user_id")
     
-    user_gif_tag_crud = UserGifTagRepository(async_session)
+    user_gif_tag_repository = UserGifTagRepository(async_session)
 
     cache_key_template = "tg_user_id:{tg_user_id}:all_user_tags"
     
@@ -206,7 +209,7 @@ async def get_all_user_tags(
     join_models.append(User)
     filters[User.tg_id] = tg_user_id
 
-    tags = await user_gif_tag_crud.get_instances_with_join(
+    tags = await user_gif_tag_repository.get_many_with_join(
         columns=[
             Tag.tag
         ],
@@ -256,7 +259,7 @@ async def set_new_user_tags_on_gif(
         tg_user_id: int,
         tg_gif_id: str,
         tags: Sequence[str] | str,
-):
+) -> None:
     """
     Добавляет (или обновляет) связь между пользователем, гифкой и её тегами.
     Делает commit если операция прошла успешно и rollback в случае возникновения ошибок. 
@@ -275,40 +278,84 @@ async def set_new_user_tags_on_gif(
     :return: None (изменения фиксируются в базе данных через session).
     """
     
-    user_gif_tag_crud = UserGifTagRepository(async_session)
-    users_crud = UserRepository(async_session)
-    tags_crud = TagRepository(async_session)
-    gifs_crud = GifRepository(async_session)
-    if isinstance(tags, (str, tuple)):
-        tags = [tags]
+    user_gif_tag_repository = UserGifTagRepository(async_session)
+    user_repository = UserRepository(async_session)
+    tag_repository = TagRepository(async_session)
+    gif_repository = GifRepository(async_session)
+    
+    tags = {tags} if isinstance(tags, str) else set(tags)
 
     old_data = await get_user_gifs_with_tags(async_session, redis, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id)
+    
+    delete_tags = set()
+    new_tags = tags
+    if old_data:
+        old_tags = set(old_data.gifs_data[0].tags)
+        if old_tags:
+            delete_tags = old_tags - tags
+            new_tags = tags - old_tags
+    
+    needed_tags = delete_tags | new_tags
 
-    # TODO: Можно оптимизировать, но нужно улучшать CRUD
-    # Удаляем старые ненужные теги
     try:
-        if old_data and old_data['gifs_data']:
-            for old_tag in old_data['gifs_data'][0]['tags']:
-                if not old_tag in tags:
-                    tag_id = (await tags_crud.get_instances(columns=Tag.id, filters={Tag.tag: old_tag}))[0][0]
-                    await user_gif_tag_crud.delete_instances(filters={
-                        UserGifTag.user_id: old_data['id'],
-                        UserGifTag.gif_id: old_data['gifs_data'][0]['id'],
-                        UserGifTag.tag_id: tag_id,
-                    })
-                else:
-                    tags.remove(old_tag)
-
-        user = await users_crud.create_user(tg_user_id)
-        gif = await gifs_crud.create_gif(tg_gif_id)
-        tags = await asyncio.gather(
-            *(tags_crud.create_tag(tag) for tag in tags)
-        )
+        # Вставляем новые теги
+        if new_tags:
+            await tag_repository.create_many(
+                [
+                    {Tag.tag: tag}
+                    for tag in new_tags
+                ],
+                ignore_conflicts=True
+            )
         
-        await asyncio.gather(
-            *(user_gif_tag_crud.create_user_gif_tag(user_id=user.id, gif_id=gif.id, tag_id=tag.id) for tag in tags)
+        # Получаем tag_id и расфасовываем
+        rows = await tag_repository.get_many(
+            columns=(Tag.id, Tag.tag),
+            filters={
+                Tag.tag: needed_tags
+            }
         )
-
+        tag_to_id = {
+            row.tag: row.id
+            for row in rows
+        }
+        delete_tags_ids = [
+            tag_to_id[tag]
+            for tag in delete_tags
+        ]
+        new_tags_ids = [
+            tag_to_id[tag]
+            for tag in new_tags
+        ]
+        
+        # Создаем пользователя и GIF
+        if not old_data:
+            user = await user_repository.create_user(tg_user_id)
+            gif = await gif_repository.create_gif(tg_gif_id)
+        
+        # Снимаем связь между старыми тегами и гифкой
+        if delete_tags:
+            await user_gif_tag_repository.delete_many(
+                filters={
+                    UserGifTag.user_id: old_data.id,
+                    UserGifTag.gif_id: old_data.gifs_data[0].id,
+                    UserGifTag.tag_id: delete_tags_ids,
+                }
+            )
+        
+        # Создаем связь между новыми тегами, GIF и пользователем
+        if new_tags_ids:
+            await user_gif_tag_repository.create_many(
+                [
+                    {
+                        UserGifTag.user_id: old_data.id if old_data else user.id,
+                        UserGifTag.gif_id: old_data.gifs_data[0].id if old_data else gif.id,
+                        UserGifTag.tag_id: new_tag_id
+                    }
+                    for new_tag_id in new_tags_ids
+                ]
+            )
+        
         await async_session.commit()
         logger.info(
             "User GIF tags updated",
@@ -348,7 +395,7 @@ async def delete_user_gif_tags(
         tg_user_id: int,
         gif_id: str,
         gif_id_type: str | None = None
-):
+) -> int | None:
     """
     Удаляет GIF вместе с тегами для конкретного пользователя. 
     Делает commit если операция прошла успешно и rollback в случае возникновения ошибок.
@@ -363,12 +410,12 @@ async def delete_user_gif_tags(
 
     :return: Количество удаленных строк
     """
-    gifs_crud = GifRepository(async_session)
-    user_crud = UserRepository(async_session)
-    user_gif_tag_crud = UserGifTagRepository(async_session)
+    gif_repository = GifRepository(async_session)
+    user_repository = UserRepository(async_session)
+    user_gif_tag_repository = UserGifTagRepository(async_session)
     
     if not gif_id_type or gif_id_type == 'tg':
-        gif_id = await gifs_crud.get_instances(columns=Gif.id, filters={Gif.tg_gif_id: gif_id})
+        gif_id = await gif_repository.get_many(columns=Gif.id, filters={Gif.tg_gif_id: gif_id})
         if gif_id:
             gif_id = gif_id[0][0]
         else:
@@ -386,7 +433,7 @@ async def delete_user_gif_tags(
         gif_id = int(gif_id)
     
     
-    user_id = await user_crud.get_instances(columns=User.id, filters={User.tg_id: tg_user_id})
+    user_id = await user_repository.get_many(columns=User.id, filters={User.tg_id: tg_user_id})
     if user_id:
         logger.info(
             "User to not found",
@@ -403,7 +450,7 @@ async def delete_user_gif_tags(
         return None
     
     try:
-        result = await user_gif_tag_crud.delete_instances(filters={
+        result = await user_gif_tag_repository.delete_many(filters={
             UserGifTag.user_id: user_id,
             UserGifTag.gif_id: gif_id,
         })

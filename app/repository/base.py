@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy import select, update, delete, inspect, Row
 from sqlalchemy.dialects.postgresql import insert
-from app.utils import is_valid_column_for_model, get_orm_columns
+from app.utils import is_valid_column_for_model, get_orm_columns, validate_columns_for_model
 from typing import Sequence, Any
 from app.models import Base
 
@@ -63,7 +63,7 @@ class _BaseCRUD:
         self.model = model
 
     # Реализация через один запрос к БД. Возможно будет грузить базу больше чем простая проверка на существование 
-    async def create_instance(
+    async def create_one(
             self,
             values: dict[InstrumentedAttribute, Any],
     ) -> Row[tuple]:
@@ -91,13 +91,10 @@ class _BaseCRUD:
                 unique_cols.append(col)
 
         if not_autoincrement_key_index == -1:
-            raise ValueError(f"Все колонки текущей таблицы {self.model.__tablename__} - primary_key. "
-                             "Данный метод не может работать с такими таблицами.")
+            raise ValueError(f"Таблица {self.model.__tablename__} не подходит для использования в этом методе. "
+                             "Воспользуйтесь другим способом создания.")
         
-        for column in values:
-            if not is_valid_column_for_model(column, self.model):
-                raise ValueError(f"В ключе для вставки ожидается колонка модели {self.model.__name__}. "
-                                 f"Вы передали {type(column)}, а именно {column}.")
+        validate_columns_for_model(values.keys(), self.model)
 
         insert_stmt = insert(self.model).values(values)
         if unique_cols:
@@ -112,8 +109,56 @@ class _BaseCRUD:
         result = await self.async_session.execute(stmt)
 
         return result.fetchone()
+    
+    async def create_many(
+        self,
+        values: Sequence[dict[InstrumentedAttribute, Any]],
+        ignore_conflicts: bool = False,
+    ) -> list[Row[tuple]]:
+        """
+        Создаёт несколько записей в таблице текущей ORM-модели.
 
-    async def get_instances(
+        Метод выполняет массовую вставку (INSERT) нескольких записей за один
+        запрос к базе данных и возвращает созданные строки.
+
+        В отличие от `create_one`, метод не выполняет обработку конфликтов
+        уникальности. Если одна из записей нарушает ограничение таблицы
+        (например UNIQUE или PRIMARY KEY), операция вставки завершится ошибкой.
+
+        :param values: Список словарей {column: value}, где column — колонка
+                       модели ORM (`InstrumentedAttribute`), а value —
+                       значение для вставки.
+        :param ignore_conflicts: Пропускает уже имеющиеся записи. 
+                                 Применяет к запросу метод on_conflict_do_nothing().
+
+        :return: Список строк результата (`Row`), содержащих значения всех
+                 колонок модели после вставки.
+
+        :raises ValueError: Если переданная колонка не принадлежит текущей
+                            ORM-модели.
+        """
+        columns = get_orm_columns(self.model)
+
+        for value in values:
+            validate_columns_for_model(
+                value.keys(),
+                self.model
+            )
+
+        stmt = (
+            insert(self.model)
+            .values(values)
+            .returning(*columns)
+        )
+
+        if ignore_conflicts:
+            stmt = stmt.on_conflict_do_nothing()
+
+        result = await self.async_session.execute(stmt)
+
+        return result.all()
+
+    async def get_many(
             self,
             columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute | None = None,
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None
@@ -126,16 +171,13 @@ class _BaseCRUD:
                        а value — значение для фильтрации.
         :return: Список объектов с выбранными колонками.
         """
-        if columns and not isinstance(columns, (list, tuple)):
+        if columns and isinstance(columns, InstrumentedAttribute):
             columns = (columns, )
     
         if not columns:
             columns = get_orm_columns(self.model)
         else:
-            for column in columns:
-                if not is_valid_column_for_model(column, self.model):
-                    raise ValueError(f"В списке колонок ожидается колонка модели {self.model.__name__}. "
-                                     f"Вы передали {type(column)}, а именно {column}.")
+            validate_columns_for_model(columns, self.model)
         
         stmt = select(*columns)
     
@@ -144,7 +186,7 @@ class _BaseCRUD:
                 if not is_valid_column_for_model(column, self.model):
                     raise ValueError(f"В ключе для фильтрации ожидается колонка модели {self.model.__name__}. "
                                      f"Вы передали {type(column)}, а именно {column}.")
-                if not isinstance(values, (list, tuple)):
+                if not isinstance(values, (list, tuple, set)):
                     values = (values,)
     
                 stmt = stmt.where(column.in_(values))
@@ -152,7 +194,7 @@ class _BaseCRUD:
         result = await self.async_session.execute(stmt)
         return result.all()
     
-    async def update_instance(
+    async def update_one(
             self,
             instance_id: int | None,
             values: dict[InstrumentedAttribute, Any],
@@ -168,14 +210,10 @@ class _BaseCRUD:
         :param instance_id: Значение первичного ключа записи для обновления. Если указано, фильтры игнорируются.
         :param values: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
                        а value — новое значение для обновления.
-        :param filters: Словарь {column: value} для фильтрации обновляемых записей, используется если `instance_id` не задан. Воз
+        :param filters: Словарь {column: value} для фильтрации обновляемых записей, используется если `instance_id` не задан.
         :return: Row с колонками модели после обновления, или None, если запись не найдена.
         """
-        
-        for column in values:
-            if not is_valid_column_for_model(column, self.model):
-                raise ValueError(f"В ключе для вставки ожидается колонка модели {self.model.__name__}. "
-                                 f"Вы передали {type(column)}, а именно {column}.")
+        validate_columns_for_model(values.keys(), self.model)
         
         columns = get_orm_columns(self.model)
         
@@ -199,7 +237,7 @@ class _BaseCRUD:
         # noinspection PyUnresolvedReferences
         return result.fetchone()
 
-    async def delete_instances(
+    async def delete_many(
             self,
             instance_id: int | None = None,
             *,
@@ -230,7 +268,7 @@ class _BaseCRUD:
             if not is_valid_column_for_model(column, self.model):
                 raise ValueError(f"В ключе для фильтрации ожидается колонка модели {self.model.__name__}. "
                                  f"Вы передали {type(column)}, а именно {column}.")
-            if not isinstance(values, (list, tuple)):
+            if not isinstance(values, (list, tuple, set)):
                 values = (values,)
     
             stmt = stmt.where(column.in_(values))
