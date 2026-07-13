@@ -34,6 +34,6 @@ class UserRepository(_BaseCRUD):
         :param tg_id: Telegram ID пользователя.
         :return: Row с колонками модели `User` после вставки или при конфликте.
         """
-        return await super().create_instance({
+        return await super().create_one({
             User.tg_id: tg_id
         })

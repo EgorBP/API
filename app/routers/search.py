@@ -11,7 +11,7 @@ router = APIRouter()
 @router.get('/search', response_model=SearchOut)
 async def search_gifs(
         tg_user_id: int = Query(),
-        tags: Optional[List[str]] = Query(None),
+        tags: Optional[set[str]] = Query(None),
         db=Depends(get_db),
         redis=Depends(get_redis)
 ):
@@ -33,6 +33,6 @@ async def search_gifs(
     """
     data = await get_user_gifs_with_tags(db, redis, tg_user_id=tg_user_id, tags=tags)
     if not data:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Data not found")
     
     return data

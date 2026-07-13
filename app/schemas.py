@@ -24,11 +24,11 @@ class GifCreate(GifBase):
     pass
 
 class GifUpdate(BaseModel):
-    tags: list[str]
+    tags: set[str]
 
 class GifOut(GifBase):
     id: int
-    tags: list[str]
+    tags: set[str]
 
     model_config = {
         "from_attributes": True

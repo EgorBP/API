@@ -38,13 +38,13 @@ class UserGifTagRepository(_BaseCRUD):
 
         :return: Row с колонками модели UserGifTag.
         """
-        return await super().create_instance({
+        return await super().create_one({
             UserGifTag.user_id: user_id,
             UserGifTag.gif_id: gif_id,
             UserGifTag.tag_id: tag_id,
         })
     
-    async def get_instances_with_join(
+    async def get_many_with_join(
             self,
             columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute,
             join_models: Sequence[JoinModel] | JoinModel | None = None,
@@ -62,7 +62,7 @@ class UserGifTagRepository(_BaseCRUD):
         :param scalars: Будет ли применен scalars() к результату.
         :return: 
         """
-        if not isinstance(columns, (list, tuple)):
+        if isinstance(columns, InstrumentedAttribute):
             columns = (columns,)
             
         if not columns:
@@ -71,7 +71,7 @@ class UserGifTagRepository(_BaseCRUD):
         stmt = select(*columns).select_from(UserGifTag)
 
         if join_models:
-            if not isinstance(join_models, (list, tuple)):
+            if not isinstance(join_models, (list, tuple, set)):
                 join_models = (join_models,)
 
             for model in join_models:
@@ -87,7 +87,7 @@ class UserGifTagRepository(_BaseCRUD):
                 if not isinstance(column, InstrumentedAttribute):
                     raise ValueError(f"В ключе для фильтрации ожидается колонка модели. "
                                      f"Вы передали {type(column)}, а именно {column}.")
-                if not isinstance(values, (list, tuple)):
+                if not isinstance(values, (list, tuple, set)):
                     values = (values,)
 
                 stmt = stmt.where(column.in_(values))
