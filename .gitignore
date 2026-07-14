@@ -1,6 +1,7 @@
 .venv
 .env
 .env.docker
+.env.docker.test
 app/test.py
 
 

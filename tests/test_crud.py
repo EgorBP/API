@@ -46,7 +46,7 @@ class TestUsersCRUD:
         await db_session.commit()
         
         # Получаем пользователя
-        users = await crud.get_instances(filters={User.tg_id: tg_id})
+        users = await crud.get_many(filters={User.tg_id: tg_id})
         
         assert len(users) == 1
         assert users[0].tg_id == tg_id
@@ -61,13 +61,13 @@ class TestUsersCRUD:
         await db_session.commit()
         
         # Удаляем пользователя
-        deleted_count = await crud.delete_instances(instance_id=user.id)
+        deleted_count = await crud.delete_many(instance_id=user.id)
         await db_session.commit()
         
         assert deleted_count == 1
         
         # Проверяем, что пользователь удалён
-        users = await crud.get_instances(filters={User.tg_id: tg_id})
+        users = await crud.get_many(filters={User.tg_id: tg_id})
         assert len(users) == 0
 
 
@@ -113,7 +113,7 @@ class TestGifsCRUD:
         await db_session.commit()
         
         # Получаем GIF
-        gifs = await crud.get_instances(filters={Gif.tg_gif_id: tg_gif_id})
+        gifs = await crud.get_many(filters={Gif.tg_gif_id: tg_gif_id})
         
         assert len(gifs) == 1
         assert gifs[0].tg_gif_id == tg_gif_id
@@ -128,13 +128,13 @@ class TestGifsCRUD:
         await db_session.commit()
         
         # Удаляем GIF
-        deleted_count = await crud.delete_instances(instance_id=gif.id)
+        deleted_count = await crud.delete_many(instance_id=gif.id)
         await db_session.commit()
         
         assert deleted_count == 1
         
         # Проверяем, что GIF удалён
-        gifs = await crud.get_instances(filters={Gif.tg_gif_id: tg_gif_id})
+        gifs = await crud.get_many(filters={Gif.tg_gif_id: tg_gif_id})
         assert len(gifs) == 0
 
 
@@ -181,7 +181,7 @@ class TestTagsCRUD:
         await db_session.commit()
         
         # Получаем все теги
-        tags = await crud.get_instances(filters={Tag.tag: tag_names})
+        tags = await crud.get_many(filters={Tag.tag: tag_names})
         
         assert len(tags) == 3
         retrieved_names = [tag.tag for tag in tags]
@@ -263,7 +263,7 @@ class TestUserGifTagCRUD:
         await db_session.commit()
         
         # Удаляем связь
-        deleted_count = await crud.delete_instances(
+        deleted_count = await crud.delete_many(
             filters={
                 UserGifTag.user_id: setup_entities["user_id"],
                 UserGifTag.gif_id: setup_entities["gif_id"],
@@ -275,7 +275,7 @@ class TestUserGifTagCRUD:
         assert deleted_count == 1
         
         # Проверяем, что связь удалена
-        relations = await crud.get_instances(
+        relations = await crud.get_many(
             filters={
                 UserGifTag.user_id: setup_entities["user_id"],
                 UserGifTag.gif_id: setup_entities["gif_id"],
@@ -297,11 +297,11 @@ class TestUserGifTagCRUD:
         await db_session.commit()
         
         # Удаляем пользователя
-        await user_crud.delete_instances(instance_id=setup_entities["user_id"])
+        await user_crud.delete_many(instance_id=setup_entities["user_id"])
         await db_session.commit()
         
         # Проверяем, что связь тоже удалена (CASCADE)
-        relations = await ugt_crud.get_instances(
+        relations = await ugt_crud.get_many(
             filters={UserGifTag.user_id: setup_entities["user_id"]}
         )
         assert len(relations) == 0

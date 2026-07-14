@@ -22,8 +22,7 @@ class TestUserEndpoints:
             f"/user/{sample_user_id}/gif/{sample_gif_id}",
             json={"tags": ["funny", "cat", "meme"]}
         )
-        assert response.status_code == 200
-        assert response.json() == {"successful": True}
+        assert response.status_code == 204
 
         # Получаем созданный GIF
         response = await client.get(f"/user/{sample_user_id}/gif/{sample_gif_id}")
@@ -46,7 +45,7 @@ class TestUserEndpoints:
             f"/user/{sample_user_id}/gif/{sample_gif_id}",
             json={"tags": ["new", "updated", "tags"]}
         )
-        assert response.status_code == 200
+        assert response.status_code == 204
 
         # Проверяем, что теги обновились
         response = await client.get(f"/user/{sample_user_id}/gif/{sample_gif_id}")
@@ -70,8 +69,7 @@ class TestUserEndpoints:
 
         # Удаляем теги
         response = await client.delete(f"/user/{sample_user_id}/gif/{sample_gif_id}")
-        assert response.status_code == 200
-        assert response.json() == {"successful": True}
+        assert response.status_code == 204
 
         # Проверяем, что GIF больше не найден
         response = await client.get(f"/user/{sample_user_id}/gif/{sample_gif_id}")
@@ -164,9 +162,7 @@ class TestSearchEndpoint:
         response = await client.get(
             f"/search?tg_user_id={user_with_gifs}&tags=nonexistent"
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data["gifs_data"]) == 0
+        assert response.status_code == 404
 
     async def test_search_for_nonexistent_user(self, client: AsyncClient):
         """Тест поиска для несуществующего пользователя."""
@@ -183,7 +179,7 @@ class TestEdgeCases:
             "/user/111111/gif/test_gif",
             json={"tags": []}
         )
-        assert response.status_code == 200
+        assert response.status_code == 204
 
     async def test_duplicate_tags(self, client: AsyncClient):
         """Тест создания GIF с дублирующимися тегами."""
@@ -194,9 +190,8 @@ class TestEdgeCases:
             f"/user/{user_id}/gif/{gif_id}",
             json={"tags": ["tag1", "tag1", "tag2"]}
         )
-        assert response.status_code == 200
+        assert response.status_code == 204
 
-        # Проверяем, что дубликаты не сохранились (или сохранились - зависит от логики)
         response = await client.get(f"/user/{user_id}/gif/{gif_id}")
         assert response.status_code == 200
 
