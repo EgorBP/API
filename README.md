@@ -32,6 +32,7 @@ cd API
 ```bash
 cp .env.docker.example .env.docker
 cp .env.example .env
+cp .env.docker.test.example .env.docker.test
 ```
 
 ### 🐳 Запуск через Docker (Рекомендуется)
