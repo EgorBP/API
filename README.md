@@ -65,23 +65,14 @@ uv run uvicorn app.main:app --reload
 
 ## 🧪 Тестирование
 
-Проект содержит **34 теста** (integration, unit, database).
+Проект содержит **46 тестов** (integration, unit, database). Тестам нужны отдельные PostgreSQL и Redis (изолированы от dev/prod данных).
 
-### Запуск тестов
+### Запуск тестов (рекомендуется — Docker Compose)
 
-1. Запустите PostgreSQL для разработки:
+Самый простой способ — поднять всё окружение для тестов одной командой:
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
 ```
+Это поднимет отдельные контейнеры PostgreSQL (`test_pet_project`) и Redis, смонтирует `tests/` в контейнер и запустит `pytest`.
 
-2. Создайте тестовую базу данных:
-```bash
-docker compose -f docker-compose.dev.yml exec db psql -U postgres -c "CREATE DATABASE test_pet_project;"
-```
-
-3. Запустите тесты:
-```bash
-uv run pytest tests/ -v
-```
-
-Подробная документация по тестированию: [TESTING.md](TESTING.md)
+Подробная документация и альтернативные варианты (локальный запуск без Docker): [TESTING.md](TESTING.md)

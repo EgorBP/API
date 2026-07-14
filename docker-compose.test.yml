@@ -1,0 +1,35 @@
+name: app_test
+
+services:
+  test-db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123465
+      POSTGRES_DB: test_pet_project
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 5s
+      retries: 5
+
+  test-redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  tests:
+    build: .
+    env_file:
+      - .env.docker.test
+    volumes:
+      - ./tests:/app/tests
+    depends_on:
+      test-db:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    command: uv run pytest -v
