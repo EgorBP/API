@@ -1,6 +1,3 @@
-import asyncio
-from codecs import ignore_errors
-
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import UserGifTag, User, Gif, Tag
 from app.schemas import SearchOut, GifOut
