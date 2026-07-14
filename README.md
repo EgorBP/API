@@ -3,6 +3,19 @@
 ### 🔹 Описание
 Полностью асинхронный API на Python с использованием FastAPI, PostgreSQL и Redis, предоставляющий удобный и расширяемый интерфейс для работы с данными через HTTP-запросы.  
 
+### Стек технологий
+
+- Python 3.13
+- FastAPI
+- SQLAlchemy 2
+- PostgreSQL
+- Redis
+- Alembic
+- Docker + Docker Compose
+- Pydantic v2
+- pytest
+- uv
+
 ### ✨ Основные возможности
 - Быстрый запуск через [Docker](#-запуск-через-docker-рекомендуется) или локально с [Python](#-запуск-через-python-uv)  
 - Управление схемой базы данных через Alembic миграции
