@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from app.api.dependencies.services import get_user_service
 from app.schemas.common import UserGifsCursorPaginatedResponse
 from app.schemas.gifs import GifUpdate
-from app.core.database import get_db
 from app.services import UserService
-from app.core.redis import get_redis
 
 router = APIRouter()
 
@@ -18,8 +18,7 @@ async def get_user_gifs(
         tags: set[str] | None = Query(None),
         cursor: int | None = Query(None),
         limit: int = Query(default=20, ge=1, le=100),
-        db=Depends(get_db),
-        redis=Depends(get_redis)
+        user_service: UserService = Depends(get_user_service)
 ):
     """
     Получить GIF пользователя по его Telegram ID и идентификатору GIF.
@@ -33,10 +32,7 @@ async def get_user_gifs(
     - **tg_gif_id**: str — идентификатор GIF в Telegram
     - **tags**: list[str] — список тегов GIF
     """
-    user_service = UserService(db, redis)
-
     data = await user_service.get_user_gifs_with_tags(
-        tg_user_id=tg_user_id,
         gif_ids=gif_ids,
         tags=tags,
         cursor_id=cursor,
@@ -55,8 +51,7 @@ async def get_user_gifs(
 )
 async def get_user_tags(
         tg_user_id: int,
-        db=Depends(get_db),
-        redis=Depends(get_redis)
+        user_service: UserService = Depends(get_user_service)
 ):
     """
     Получение всех тегов пользователя по его Telegram ID.
@@ -67,9 +62,7 @@ async def get_user_tags(
     **Возвращает**:
     Список тегов (list[str]) или HTTP 404, если пользователь не найден.
     """
-    user_service = UserService(db, redis)
-
-    data = await user_service.get_all_user_tags(tg_user_id=tg_user_id)
+    data = await user_service.get_all_user_tags()
     if not data:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -84,8 +77,7 @@ async def update_gif_tags(
         tg_user_id: int,
         gif_id: int,
         gif_data: GifUpdate,
-        db=Depends(get_db),
-        redis=Depends(get_redis)
+        user_service: UserService = Depends(get_user_service)
 ):
     """
     Обновить список тегов для конкретного GIF пользователя.
@@ -96,8 +88,6 @@ async def update_gif_tags(
 
     **Returns:** HTTP 204 если операция прошла успешно
     """
-    user_service = UserService(db, redis)
-
     await user_service.set_new_user_tags_on_gif(
         tg_user_id=tg_user_id,
         gif_id=gif_id,
@@ -111,8 +101,7 @@ async def delete_gif_tags(
         tg_user_id: int,
         gif_id: int,
         gif_id_type: str | None = Query(None),
-        db=Depends(get_db),
-        redis=Depends(get_redis)
+        user_service: UserService = Depends(get_user_service)
 ):
     """
     Удалить все связи тегов с конкретным GIF пользователя.
@@ -127,14 +116,10 @@ async def delete_gif_tags(
 
     **Returns:** HTTP 204 если операция прошла успешно
     """
-    user_service = UserService(db, redis)
-
     result = await user_service.delete_user_gif_tags(
         tg_user_id=tg_user_id,
         gif_id=gif_id,
         gif_id_type=gif_id_type,
     )
-    if not result:
-        raise HTTPException(status_code=404, detail="Instances not found")
 
     return
