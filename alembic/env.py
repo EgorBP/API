@@ -7,7 +7,7 @@ from alembic import context
 
 from app.models import Base
 from app.core.logging.config import setup_logging
-from app.settings import settings
+from app.core.settings import settings
 
 
 setup_logging()

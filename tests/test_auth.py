@@ -4,7 +4,7 @@ from app.main import app
 
 
 class TestAuth:
-    """Тесты авторизации по заголовку X-Secret-Key (app/core/dependencies.py)."""
+    """Тесты авторизации по заголовку X-Secret-Key (app/core/auth.py)."""
 
     async def test_missing_api_key(self, client: AsyncClient):
         """Без заголовка X-Secret-Key запрос должен быть отклонён с 401."""

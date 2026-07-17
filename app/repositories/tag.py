@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Tag
-from app.repository import _BaseCRUD
+from app.repositories import _BaseCRUD
 
 
 class TagRepository(_BaseCRUD):
@@ -11,8 +11,11 @@ class TagRepository(_BaseCRUD):
     Остальные операции (get / update / delete) наследуются от BaseCRUD.
     """
 
-    def __init__(self, async_session: AsyncSession):
-        super().__init__(async_session, model=Tag)
+    def __init__(
+            self, 
+            session: AsyncSession
+    ):
+        super().__init__(session, model=Tag)
 
     async def create_tag(
             self,

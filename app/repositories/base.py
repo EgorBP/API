@@ -1,13 +1,16 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm.attributes import InstrumentedAttribute
-from sqlalchemy import select, update, delete, inspect, Row
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm.attributes import InstrumentedAttribute
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update, delete, inspect, Row, Select, Update, Delete, Insert
 from app.utils import is_valid_column_for_model, get_orm_columns, validate_columns_for_model
 from typing import Sequence, Any
-from app.models import Base
+from typing import TypeVar, Generic
+
+T = TypeVar("T")
 
 
-class _BaseCRUD:
+# TODO: update dockstring
+class _BaseCRUD(Generic[T]):
     """
     Базовый утилитный класс для выполнения типичных операций CRUD (Create, Read, Update, Delete)
     над одной SQLAlchemy ORM-моделью в асинхронном контексте.
@@ -32,35 +35,82 @@ class _BaseCRUD:
 
     Пример использования:
     
-        repository = _BaseCRUD(async_session=session, model=User)
+        repositories = _BaseCRUD(async_session=session, model=User)
         
         # вставка
         
-        row = await repository.create_instance({User.email: "a@example.com", User.name: "A"})
+        row = await repositories.create_instance({User.email: "a@example.com", User.name: "A"})
         
         # выборка
         
-        rows = await repository.get_instances(filters={User.is_active: True})
+        rows = await repositories.get_instances(filters={User.is_active: True})
         
         # обновление
         
-        updated = await repository.update_instance(instance_id=1, values={User.name: "B"})
+        updated = await repositories.update_instance(instance_id=1, values={User.name: "B"})
         
         # удаление
         
-        deleted_count = await repository.delete_instances(filters={User.id: [2, 3]})
+        deleted_count = await repositories.delete_instances(filters={User.id: [2, 3]})
     """
     def __init__(
             self,
-            async_session: AsyncSession,
-            model: type[Base],
+            session: AsyncSession,
+            model: type[T],
     ):
         """
-        :param async_session: Объект асинхронной сессии SQLAlchemy.
+        :param session: Объект асинхронной сессии SQLAlchemy.
         :param model: SQLAlchemy модель.
         """
-        self.async_session = async_session
+        self.async_session = session
         self.model = model
+        
+    def _add_filters_to_stmt[T_stmt: Select | Update | Delete | Insert](
+            self,
+            stmt: T_stmt,
+        filters: dict[InstrumentedAttribute, Sequence[Any] | Any],
+    ) -> T_stmt:
+        for column, values in filters.items():
+            if not is_valid_column_for_model(column, self.model):
+                raise ValueError(f"В ключе для фильтрации ожидается колонка модели {self.model.__name__}. "
+                                 f"Вы передали {type(column)}, а именно {column}.")
+            if not isinstance(values, (list, tuple, set)):
+                stmt = stmt.where(column == values)
+            else:
+                stmt = stmt.where(column.in_(values))
+
+        return stmt
+    
+    def _build_get_stmt(
+            self,
+            columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute | None = None,
+            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
+    ) -> Select:
+        if columns and isinstance(columns, InstrumentedAttribute):
+            columns = (columns,)
+
+        if not columns:
+            columns = get_orm_columns(self.model)
+        else:
+            validate_columns_for_model(columns, self.model)
+
+        stmt = select(*columns)
+
+        if filters:
+            stmt = self._add_filters_to_stmt(stmt, filters)
+            
+        return stmt
+    
+    def _build_get_orm_stmt(
+            self,
+            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
+    ) -> Select:
+        stmt = select(self.model)
+
+        if filters:
+            stmt = self._add_filters_to_stmt(stmt, filters)
+    
+        return stmt
 
     # Реализация через один запрос к БД. Возможно будет грузить базу больше чем простая проверка на существование 
     async def create_one(
@@ -161,39 +211,97 @@ class _BaseCRUD:
     async def get_many(
             self,
             columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute | None = None,
-            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None
-    ) -> list[Row[tuple]]:
+            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
+            scalars: bool = False
+    ) -> list[Row[tuple]] | list[Any]:
         """
         Универсальный метод получения записей с фильтрацией по колонкам.
     
         :param columns: Колонки для возврата. Если None — вернутся все.
         :param filters: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
                        а value — значение для фильтрации.
+        :param scalars: Будет ли применен scalars() к результату.
         :return: Список объектов с выбранными колонками.
         """
-        if columns and isinstance(columns, InstrumentedAttribute):
-            columns = (columns, )
-    
-        if not columns:
-            columns = get_orm_columns(self.model)
-        else:
-            validate_columns_for_model(columns, self.model)
-        
-        stmt = select(*columns)
-    
-        if filters:
-            for column, values in filters.items():
-                if not is_valid_column_for_model(column, self.model):
-                    raise ValueError(f"В ключе для фильтрации ожидается колонка модели {self.model.__name__}. "
-                                     f"Вы передали {type(column)}, а именно {column}.")
-                if not isinstance(values, (list, tuple, set)):
-                    values = (values,)
-    
-                stmt = stmt.where(column.in_(values))
+        stmt = self._build_get_stmt(
+            columns=columns,
+            filters=filters
+        )
     
         result = await self.async_session.execute(stmt)
+        
+        if scalars:
+            result = result.scalars()
+            
         return result.all()
+
+    async def get_one(
+            self,
+            columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute | None = None,
+            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
+            scalar: bool = False
+    ) -> Row[tuple] | Any | None:
+        """
+        Универсальный метод получения записей с фильтрацией по колонкам.
+
+        :param columns: Колонки для возврата. Если None — вернутся все.
+        :param filters: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
+                       а value — значение для фильтрации.
+        :param scalars: Будет ли применен scalars() к результату.
+        :return: Список объектов с выбранными колонками.
+        """
+        stmt = self._build_get_stmt(
+            columns=columns,
+            filters=filters
+        ).limit(1)
+
+        result = await self.async_session.execute(stmt)
+
+        if scalar:
+            return result.scalar()
+
+        return result.first()
+
+    async def get_many_orm(
+            self,
+            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
+    ) -> list[T]:
+        """
+        Универсальный метод получения ORM модели текущей таблицы.
+
+        :param filters: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
+                       а value — значение для фильтрации.
+        :return: Список объектов с выбранными колонками.
+        """
+        stmt = self._build_get_orm_stmt(
+            filters=filters
+        )
+
+        result = await self.async_session.execute(stmt)
+        
+        return result.scalars().all()
     
+    async def get_one_orm(
+            self,
+            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
+    ) -> T | None:
+        """
+        Универсальный метод получения записей с фильтрацией по колонкам.
+
+        :param columns: Колонки для возврата. Если None — вернутся все.
+        :param filters: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
+                       а value — значение для фильтрации.
+        :param scalars: Будет ли применен scalars() к результату.
+        :return: Список объектов с выбранными колонками.
+        """
+        stmt = self._build_get_orm_stmt(
+            filters=filters
+        ).limit(1)
+
+        result = await self.async_session.execute(stmt)
+
+        return result.scalar_one_or_none()
+
     async def update_one(
             self,
             instance_id: int | None,
@@ -226,15 +334,11 @@ class _BaseCRUD:
             raise ValueError("Нужно указать либо instance_id, либо фильтры для удаления.")
 
         stmt = update(self.model).returning(*columns)
-        for column, id_ in filters.items():
-            if not is_valid_column_for_model(column, self.model):
-                raise ValueError(f"В ключе для фильтрации ожидается колонка модели {self.model.__name__}. "
-                                 f"Вы передали {type(column)}, а именно {column}.")
-
-            stmt = stmt.where(column == id_)
+            
+        stmt = self._add_filters_to_stmt(stmt, filters)
 
         result = await self.async_session.execute(stmt)
-        # noinspection PyUnresolvedReferences
+        
         return result.fetchone()
 
     async def delete_many(
@@ -264,14 +368,7 @@ class _BaseCRUD:
             raise ValueError("Нужно указать либо instance_id, либо фильтры для удаления.")
 
         stmt = delete(self.model)
-        for column, values in filters.items():
-            if not is_valid_column_for_model(column, self.model):
-                raise ValueError(f"В ключе для фильтрации ожидается колонка модели {self.model.__name__}. "
-                                 f"Вы передали {type(column)}, а именно {column}.")
-            if not isinstance(values, (list, tuple, set)):
-                values = (values,)
-    
-            stmt = stmt.where(column.in_(values))
+        stmt = self._add_filters_to_stmt(stmt, filters)
         
         result = await self.async_session.execute(stmt)
         # noinspection PyUnresolvedReferences

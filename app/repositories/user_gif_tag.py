@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.repository import _BaseCRUD
+from app.repositories import _BaseCRUD
 from app.models import UserGifTag
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from typing import Sequence
@@ -19,8 +19,11 @@ class UserGifTagRepository(_BaseCRUD):
     Остальные операции наследуются от BaseCRUD.    
     """
 
-    def __init__(self, async_session: AsyncSession):
-        super().__init__(async_session, model=UserGifTag)
+    def __init__(
+            self, 
+            session: AsyncSession
+    ):
+        super().__init__(session, model=UserGifTag)
 
     async def create_user_gif_tag(
             self,
@@ -50,7 +53,7 @@ class UserGifTagRepository(_BaseCRUD):
             join_models: Sequence[JoinModel] | JoinModel | None = None,
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
             scalars: bool = False
-    ) ->  Sequence[Row[tuple]]:
+    ) ->  list[Row[tuple]] | list[Any]:
         """
         Метод получения записей из таблицы `UserGifTag` с фильтрацией по колонкам 
         и возможностью сделать inner join возможных таблиц.
@@ -60,7 +63,7 @@ class UserGifTagRepository(_BaseCRUD):
         :param filters: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
                        а value — значение для фильтрации.
         :param scalars: Будет ли применен scalars() к результату.
-        :return: 
+        :return: Список объектов с выбранными колонками.
         """
         if isinstance(columns, InstrumentedAttribute):
             columns = (columns,)

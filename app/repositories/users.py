@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.repository import _BaseCRUD
+from app.repositories import _BaseCRUD
 from app.models import User
 
 
@@ -11,8 +11,11 @@ class UserRepository(_BaseCRUD):
     Остальные операции наследуются от BaseCRUD.
     """
 
-    def __init__(self, async_session: AsyncSession):
-        super().__init__(async_session, model=User)
+    def __init__(
+            self, 
+            session: AsyncSession
+    ):
+        super().__init__(session, model=User)
 
     async def create_user(
             self,

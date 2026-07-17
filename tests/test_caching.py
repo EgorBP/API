@@ -1,10 +1,10 @@
 import pytest
 from httpx import AsyncClient
-from app.repository import SearchRepository
+from app.repositories import SearchRepository
 
 
 class TestCaching:
-    """Тесты кэширования в app/services/user_services.py."""
+    """Тесты кэширования в app/services/users.py."""
 
     async def test_second_request_hits_cache_not_db(self, client: AsyncClient, monkeypatch):
         """Второй одинаковый GET не должен идти в SearchRepository — данные берутся из Redis."""
