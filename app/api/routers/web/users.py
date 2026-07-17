@@ -41,15 +41,12 @@ async def get_user_gifs_by_id(
         limit=limit
     )
 
-    if not data:
-        raise HTTPException(status_code=404, detail="Data not found")
-
     return data
 
 
 @router.get(
     '/{user_id}/tags/all', 
-    response_model=list[int]
+    response_model=list[str]
 )
 async def get_user_tags(
         user_id: int,
@@ -68,8 +65,6 @@ async def get_user_tags(
     user_service = UserService(db, redis)
 
     data = await user_service.get_all_user_tags(user_id=user_id)
-    if not data:
-        raise HTTPException(status_code=404, detail="User not found")
 
     return data
 
