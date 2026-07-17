@@ -1,4 +1,4 @@
-"""Колонка gif_count удалена из таблицы users из-за сложностей синхронизации
+"""The gif_count column has been removed from the users table due to synchronization difficulties
 
 Revision ID: 4a18bf358b54
 Revises: f67e8375822f
