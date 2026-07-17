@@ -30,7 +30,7 @@ class Gif(Base):
         primary_key=True
     )
 
-    tg_gif_id: Mapped[str] = mapped_column(
+    file_path: Mapped[str] = mapped_column(
         String(255),
         unique=True,
         nullable=False
