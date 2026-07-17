@@ -4,14 +4,14 @@ from redis.asyncio import Redis
 import json
 import logging
 
-from app.core.exceptions import TgUserNotFoundError, UserGifsNotFoundError
+from app.core.exceptions import UserGifsNotFoundError
 from app.models import UserGifTag, User, Gif, Tag
 from app.schemas.common import UserGifsCursorPaginatedResponse, CursorPaginatedResponse, CursorPaginationMeta
 from app.schemas.users import UserOut
 from app.schemas.gifs import GifOut
 from app.repositories import UserRepository, UserGifTagRepository, TagRepository, GifRepository, SearchRepository
 
-logger = logging.getLogger("app.service.user")
+logger = logging.getLogger("app.service.users")
 
 
 # TODO: update dockstring
@@ -19,66 +19,22 @@ class UserService:
     def __init__(
             self,
             session: AsyncSession,
-            redis: Redis
+            redis: Redis,
+            user_id: int,
     ):
         self.session = session
         self.redis = redis
-    
-    async def _get_user_id_using_tg_user_id(
-            self,
-            tg_user_id: int
-    ) -> int:
-        user_id = await self.redis.get(f"tg_user_id:{tg_user_id}")
-        
-        if user_id:
-            logger.info(
-                "Get user_id using tg_user_id",
-                extra={
-                    "source": "cache",
-                    "user_id": user_id,
-                    "tg_user_id": tg_user_id,
-                }
-            )
-            return int(user_id)
-        
-        else:
-            user_repository = UserRepository(self.session)
-            user_id = await user_repository.get_one(
-                columns=User.id,
-                filters={User.id: tg_user_id},
-                scalar=True
-            )
-        
-        if user_id:
-            logger.info(
-                "Get user_id using tg_user_id",
-                extra={
-                    "source": "database",
-                    "user_id": user_id,
-                    "tg_user_id": tg_user_id,
-                }
-            )
+        self.user_id = user_id
 
-            await self.redis.set(f"tg_user_id:{tg_user_id}", user_id)
-            
-            logger.info(
-                "Set alias to get user_id using tg_user_id to cache",
-                extra={
-                    "user_id": user_id,
-                    "tg_user_id": tg_user_id,
-                }
-            )
+        self.user_gif_tag_repository = UserGifTagRepository(self.session)
+        self.user_repository = UserRepository(self.session)
+        self.tag_repository = TagRepository(self.session)
+        self.gif_repository = GifRepository(self.session)
+        self.search_repository = SearchRepository(self.session)
 
-            return user_id
-        
-        else:
-            raise TgUserNotFoundError(tg_user_id)
-    
     async def get_user_gifs_with_tags(
             self,
             limit: int,
-            user_id: int | None = None,
-            tg_user_id: int | None = None,
             gif_ids: Sequence[int] | int | None  = None,
             tags: set[str] | str | None = None,
             cursor_id: int | None = None
@@ -125,20 +81,11 @@ class UserService:
         :return: Словарь с данными пользователя, гифок и тегов в формате, описанном выше,
                  или None, если пользователь не найден.
         """
-        if user_id is None and tg_user_id is None:
-            logger.error("Missing one of the required fields: user_id, tg_user_id")
-            raise ValueError("Необходимо передать user_id или tg_user_id")
-        
-        search_repository = SearchRepository(self.session)
-    
         if isinstance(gif_ids, int):
             gif_ids = (gif_ids,)
     
         if isinstance(tags, str):
             tags = {tags}
-
-        if not user_id:
-            user_id = await self._get_user_id_using_tg_user_id(tg_user_id)
 
         # Кеширование
         tags = tags or set()
@@ -149,7 +96,7 @@ class UserService:
         gif_ids_string = ",".join(normalized_gif_ids) if normalized_gif_ids else "all"
 
         cursor_string = str(cursor_id) if cursor_id is not None else "first_page"
-        cache_key = f"user_id:{user_id}:gif_ids:{gif_ids_string}:tags:{tags_string}:cursor:{cursor_string}:limit:{limit}"
+        cache_key = f"user_id:{self.user_id}:gif_ids:{gif_ids_string}:tags:{tags_string}:cursor:{cursor_string}:limit:{limit}"
     
         cached_data = await self.redis.get(cache_key)
         if cached_data:
@@ -157,14 +104,13 @@ class UserService:
                 "Get user gifs with tags from cache",
                 extra={
                     "source": "database",
-                    "user_id": user_id,
-                    "tg_user_id": tg_user_id,
+                    "user_id": self.user_id,
                 }
             )
             return UserGifsCursorPaginatedResponse.model_validate_json(cached_data)
         
-        rows = await search_repository.search_user_gifs_with_tags(
-            user_id=user_id,
+        rows = await self.search_repository.search_user_gifs_with_tags(
+            user_id=self.user_id,
             gif_ids=gif_ids,
             tags=tags,
             cursor_id=cursor_id,
@@ -174,8 +120,7 @@ class UserService:
         if not rows:
             raise UserGifsNotFoundError(
                 source="database",
-                user_id=user_id,
-                tg_user_id=tg_user_id
+                user_id=self.user_id,
             )
         
         if len(rows) > limit:
@@ -185,10 +130,6 @@ class UserService:
         else:
             next_cursor = None
             has_next = False
-        
-        first = rows[0]
-        resolved_user_id: int = user_id if user_id is not None else first.user_id
-        resolved_tg_user_id: int = tg_user_id if tg_user_id is not None else first.tg_id
         
         gifs_data = [
             GifOut(
@@ -201,8 +142,7 @@ class UserService:
         
         final_data = UserGifsCursorPaginatedResponse(
             user=UserOut(
-                id=resolved_user_id,
-                tg_user_id=resolved_tg_user_id
+                id=self.user_id
             ),
             gifs=CursorPaginatedResponse[GifOut, int](
                 data=gifs_data,
@@ -219,16 +159,14 @@ class UserService:
         logger.info(
             "Set new cache for 300s",
             extra={
-                "user_id": resolved_user_id,
-                "tg_user_id": resolved_tg_user_id,
+                "user_id": self.user_id,
             }
         )
         logger.info(
             "Get user gifs with tags from database",
             extra={
                 "source": "database",
-                "user_id": resolved_user_id,
-                "tg_user_id": resolved_tg_user_id,
+                "user_id": self.user_id,
             }
         )
     
@@ -236,25 +174,13 @@ class UserService:
     
     async def get_all_user_tags(
             self,
-            user_id: int | None = None,
-            tg_user_id: int | None = None,
     ) -> set[str] | None:
         """
         Возвращает все уникальные теги, связанные с GIF пользователя.
     
-        :param tg_user_id: Telegram ID пользователя.
         :return: Множество уникальных тегов (`set[str]`) или None, если пользователь не найден.
         """
-        if user_id is None and tg_user_id is None:
-            logger.error("Missing one of the required fields: user_id, tg_user_id")
-            raise ValueError("Необходимо передать user_id или tg_user_id")
-        
-        user_gif_tag_repository = UserGifTagRepository(self.session)
-        
-        if not user_id:
-            user_id = await self._get_user_id_using_tg_user_id(tg_user_id)
-
-        cache_key = f"user_id:{user_id}:all_user_tags"
+        cache_key = f"user_id:{self.user_id}:all_user_tags"
         
         cached_data = await self.redis.get(cache_key)
         if cached_data:
@@ -262,20 +188,19 @@ class UserService:
                 "Get all user tags from cache",
                 extra={
                     "source": "cache",
-                    "user_id": user_id,
-                    "tg_user_id": tg_user_id,
+                    "user_id": self.user_id,
                 }
             )
             return json.loads(cached_data)
         
-        tags = await user_gif_tag_repository.get_many_with_join(
+        tags = await self.user_gif_tag_repository.get_many_with_join(
             columns=[
                 Tag.tag
             ],
             join_models=[
                 Tag
             ],
-            filters={UserGifTag.user_id: user_id},
+            filters={UserGifTag.user_id: self.user_id},
             scalars=True
         )
     
@@ -284,7 +209,7 @@ class UserService:
                 "Tags not found",
                 extra={
                     "source": "database",
-                    "tg_user_id": tg_user_id,
+                    "user_id": self.user_id,
                 }
             )
             return None
@@ -295,20 +220,25 @@ class UserService:
         logger.info(
             "Set new cache for 300s",
             extra={
-                "user_id": user_id,
-                "tg_user_id": tg_user_id,
+                "user_id": self.user_id,
             }
         )
         logger.info(
             "Get all user tags from database",
             extra={
                 "source": "database",
-                "user_id": user_id,
-                "tg_user_id": tg_user_id,
+                "user_id": self.user_id,
             }
         )
     
         return tags
+    
+    async def add_new_user_gif(
+            self,
+            user_id: int | None = None,
+            
+    ):
+        pass
     
     async def set_new_user_tags_on_gif(
             self,
@@ -326,18 +256,11 @@ class UserService:
         - для каждой комбинации (user, gif, tag) создастся запись в таблице `user_gif_tags`.
         - старые теги будут удалены.
     
-        :param async_session: Объект асинхронной сессии SQLAlchemy.
-        :param redis: Объект асинхронной сессии Redis.
         :param tg_user_id: Telegram ID пользователя.
-        :param tg_gif_id: Telegram ID гифки.
+        :param gif_id: Telegram ID гифки.
         :param tags: Один тег или список тегов, которые будут связаны с гифкой.
         :return: None (изменения фиксируются в базе данных через session).
         """
-        
-        user_gif_tag_repository = UserGifTagRepository(self.session)
-        user_repository = UserRepository(self.session)
-        tag_repository = TagRepository(self.session)
-        gif_repository = GifRepository(self.session)
         
         tags = {tags} if isinstance(tags, str) else set(tags)
     
@@ -356,7 +279,7 @@ class UserService:
         try:
             # Вставляем новые теги
             if new_tags:
-                await tag_repository.create_many(
+                await self.tag_repository.create_many(
                     [
                         {Tag.tag: tag}
                         for tag in new_tags
@@ -365,7 +288,7 @@ class UserService:
                 )
             
             # Получаем tag_id и расфасовываем
-            rows = await tag_repository.get_many(
+            rows = await self.tag_repository.get_many(
                 columns=(Tag.id, Tag.tag),
                 filters={
                     Tag.tag: needed_tags
@@ -386,12 +309,12 @@ class UserService:
             
             # Создаем пользователя и GIF
             if not old_data:
-                user = await user_repository.create_user(tg_user_id)
-                gif = await gif_repository.create_gif(gif_id)
+                user = await self.user_repository.create_user(tg_user_id)
+                gif = await self.gif_repository.create_gif(gif_id)
             
             # Снимаем связь между старыми тегами и гифкой
             if delete_tags:
-                await user_gif_tag_repository.delete_many(
+                await self.user_gif_tag_repository.delete_many(
                     filters={
                         UserGifTag.user_id: old_data.id,
                         UserGifTag.gif_id: old_data.gifs_data[0].id,
@@ -401,7 +324,7 @@ class UserService:
             
             # Создаем связь между новыми тегами, GIF и пользователем
             if new_tags_ids:
-                await user_gif_tag_repository.create_many(
+                await self.user_gif_tag_repository.create_many(
                     [
                         {
                             UserGifTag.user_id: old_data.id if old_data else user.id,
@@ -417,7 +340,6 @@ class UserService:
                 "User GIF tags updated",
                 extra={
                     "tg_user_id": tg_user_id,
-                    "tg_gif_id": tg_gif_id
                 }
             )
             
@@ -464,12 +386,8 @@ class UserService:
     
         :return: Количество удаленных строк
         """
-        gif_repository = GifRepository(self.session)
-        user_repository = UserRepository(self.session)
-        user_gif_tag_repository = UserGifTagRepository(self.session)
-        
         if not gif_id_type or gif_id_type == 'tg':
-            gif_id = await gif_repository.get_many(columns=Gif.id, filters={Gif.tg_gif_id: gif_id})
+            gif_id = await self.gif_repository.get_many(columns=Gif.id, filters={Gif.tg_gif_id: gif_id})
             if gif_id:
                 gif_id = gif_id[0][0]
             else:
@@ -487,7 +405,7 @@ class UserService:
             gif_id = int(gif_id)
         
         
-        user_id = await user_repository.get_many(columns=User.id, filters={User.tg_id: tg_user_id})
+        user_id = await self.user_repository.get_many(columns=User.id, filters={User.tg_id: tg_user_id})
         if user_id:
             logger.info(
                 "User to not found",
@@ -504,7 +422,7 @@ class UserService:
             return None
         
         try:
-            result = await user_gif_tag_repository.delete_many(filters={
+            result = await self.user_gif_tag_repository.delete_many(filters={
                 UserGifTag.user_id: user_id,
                 UserGifTag.gif_id: gif_id,
             })

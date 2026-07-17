@@ -1,4 +1,4 @@
-from typing import Sequence, Any
+from typing import Sequence
 from sqlalchemy import distinct, Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -22,8 +22,8 @@ class SearchRepository:
     async def search_user_gifs_with_tags(
             self,
             user_id: int | None = None,
-            gif_ids: Sequence[int] | int | None = None,
-            tags: set[str] | str | None = None,
+            gif_ids: Sequence[int] | None = None,
+            tags: set[str] | None = None,
             cursor_id: int | None = None,
             limit: int | None = None
     ) -> list[Row[tuple]]:
@@ -58,22 +58,17 @@ class SearchRepository:
         
         stmt = (
             select(
-                UserGifTag.user_id,
                 UserGifTag.gif_id,
-                User.tg_id,
-                Gif.tg_gif_id,
+                Gif.file_path,
                 func.array_agg(Tag.tag).label("tags")
             )
             .select_from(UserGifTag)
-            .join(User, UserGifTag.user_id == User.id)
             .join(Gif, UserGifTag.gif_id == Gif.id)
             .join(Tag, UserGifTag.tag_id == Tag.id)
             .where(UserGifTag.user_id == user_id)
             .group_by(
-                UserGifTag.user_id,
                 UserGifTag.gif_id,
-                User.tg_id,
-                Gif.tg_gif_id
+                Gif.file_path
             )
         )
         

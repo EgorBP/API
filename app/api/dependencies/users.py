@@ -78,7 +78,6 @@ async def get_user_id_or_create_by_tg_user_id(
             user = await user_repository.create_user(tg_user_id)
             
             # await session.commit()
-            await session.flush()
 
             user_id = user.id
             logger.info(
