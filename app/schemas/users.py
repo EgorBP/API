@@ -4,7 +4,7 @@ from enum import Enum
 
 # ===== Пользователь =====
 class UserBase(BaseModel):
-    tg_user_id: int
+    pass
 
 class UserCreate(UserBase):
     pass
@@ -15,8 +15,3 @@ class UserOut(UserBase):
     model_config = {
         "from_attributes": True
     }
-
-
-class UserIdSource(str, Enum):
-    db = "db"
-    tg = "tg"
