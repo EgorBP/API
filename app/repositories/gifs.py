@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.repository import _BaseCRUD
+from app.repositories import _BaseCRUD
 from app.models import Gif
 
 
@@ -13,9 +13,9 @@ class GifRepository(_BaseCRUD):
     
     def __init__(
             self, 
-            async_session: AsyncSession
+            session: AsyncSession
     ):
-        super().__init__(async_session, model=Gif)
+        super().__init__(session, model=Gif)
 
     async def create_gif(
             self,

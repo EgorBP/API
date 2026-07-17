@@ -2,7 +2,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
-from app.core.exceptions import AppExceptionHandlers
+from app.api.exception_handlers import AppExceptionHandlers
 
 
 def _build_test_app() -> FastAPI:
@@ -51,7 +51,7 @@ async def exc_client():
 
 
 class TestExceptionHandlers:
-    """Тесты глобальных обработчиков ошибок из app/core/exceptions.py."""
+    """Тесты глобальных обработчиков ошибок из app/core/exception_handlers.py."""
 
     async def test_value_error_returns_400(self, exc_client: AsyncClient):
         response = await exc_client.get("/raise-value-error")

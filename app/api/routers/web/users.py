@@ -1,27 +1,30 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from app.schemas import GifOut, GifUpdate
+from app.schemas.common import UserGifsCursorPaginatedResponse
+from app.schemas.gifs import GifUpdate
 from app.core.database import get_db
-from app.services import get_user_gifs_with_tags, set_new_user_tags_on_gif, get_all_user_tags, delete_user_gif_tags
+from app.services import UserService
 from app.core.redis import get_redis
 
+router = APIRouter()
 
-router = APIRouter(
-    prefix='/user'
+
+@router.get(
+    '/{user_id}/gifs',
+    response_model=UserGifsCursorPaginatedResponse
 )
-
-
-@router.get('/{tg_user_id}/gif/{tg_gif_id}', response_model=GifOut)
-async def get_gif(
-        tg_user_id: int,
-        tg_gif_id: str,
+async def get_user_gifs_by_id(
+        user_id: int,
+        gif_ids: list[int] = Query(None),
+        cursor_id: int | None = Query(None),
+        limit: int = Query(default=20, ge=1, le=100),
         db=Depends(get_db),
         redis=Depends(get_redis)
 ):
     """
     Получить GIF пользователя по его Telegram ID и идентификатору GIF.
 
-    - **tg_user_id**: Telegram ID пользователя
-    - **tg_gif_id**: идентификатор GIF в Telegram
+    - **user_id**: ID пользователя
+    - **gif_id**: ID GIF
 
     **Returns:**
     Объект `GifOut` с полями:
@@ -29,15 +32,52 @@ async def get_gif(
     - **tg_gif_id**: str — идентификатор GIF в Telegram
     - **tags**: list[str] — список тегов GIF
     """
-    data = await get_user_gifs_with_tags(db, redis, tg_user_id=tg_user_id, tg_gifs_id=tg_gif_id)
-    gif_data = data.gifs_data if data else None
+    user_service = UserService(db, redis)
+    
+    data = await user_service.get_user_gifs_with_tags(
+        user_id=user_id, 
+        gif_ids=gif_ids, 
+        cursor_id=cursor_id, 
+        limit=limit
+    )
 
-    if not gif_data:
+    if not data:
         raise HTTPException(status_code=404, detail="Data not found")
 
-    return gif_data[0]
+    return data
 
-@router.put('/{tg_user_id}/gif/{tg_gif_id}', status_code=status.HTTP_204_NO_CONTENT)
+
+@router.get(
+    '/{user_id}/tags/all', 
+    response_model=list[int]
+)
+async def get_user_tags(
+        user_id: int,
+        db=Depends(get_db),
+        redis=Depends(get_redis)
+):
+    """
+    Получение всех тегов пользователя по его Telegram ID.
+
+    - **user_id**: ID пользователя
+    - **db**: Подключение к базе данных через Depends
+
+    **Возвращает**:
+    Список тегов (list[str]) или HTTP 404, если пользователь не найден.
+    """
+    user_service = UserService(db, redis)
+
+    data = await user_service.get_all_user_tags(user_id=user_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return data
+
+
+@router.put(
+    '/{tg_user_id}/gif/{tg_gif_id}/tags', 
+    status_code=status.HTTP_204_NO_CONTENT
+)
 async def update_gif_tags(
         tg_user_id: int,
         tg_gif_id: str,
@@ -54,8 +94,13 @@ async def update_gif_tags(
 
     **Returns:** HTTP 204 если операция прошла успешно
     """
-    await set_new_user_tags_on_gif(db, redis, tg_user_id, tg_gif_id, gif_data.tags)
-    # return get_user_gifs_with_tags(db, tg_id=tg_user_id, tg_gifs_id=tg_gif_id)['gifs_data'][0]
+    user_service = UserService(db, redis)
+
+    await user_service.set_new_user_tags_on_gif(
+        tg_user_id=tg_user_id, 
+        tg_gif_id=tg_gif_id, 
+        tags=gif_data.tags
+    )
     return
 
 
@@ -80,9 +125,9 @@ async def delete_gif_tags(
 
     **Returns:** HTTP 204 если операция прошла успешно
     """
-    result = await delete_user_gif_tags(
-        async_session=db,
-        redis=redis,
+    user_service = UserService(db, redis)
+
+    result = await user_service.delete_user_gif_tags(
         tg_user_id=tg_user_id,
         gif_id=gif_id,
         gif_id_type=gif_id_type,
@@ -91,25 +136,3 @@ async def delete_gif_tags(
         raise HTTPException(status_code=404, detail="Instances not found")
 
     return
-
-
-@router.get('/{tg_user_id}/tags', response_model=list[str])
-async def get_user_tags(
-        tg_user_id: int,
-        db=Depends(get_db),
-        redis=Depends(get_redis)
-):
-    """
-    Получение всех тегов пользователя по его Telegram ID.
-
-    - **tg_user_id**: Telegram ID пользователя
-    - **db**: подключение к базе данных через Depends
-
-    **Возвращает**:
-    Список тегов (list[str]) или HTTP 404, если пользователь не найден.
-    """
-    data = await get_all_user_tags(db, redis, tg_user_id=tg_user_id)
-    if not data:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    return data

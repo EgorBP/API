@@ -1,6 +1,6 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.repository import UserRepository, GifRepository, TagRepository, UserGifTagRepository
+from app.repositories import UserRepository, GifRepository, TagRepository, UserGifTagRepository
 from app.models import User, Gif, Tag, UserGifTag
 
 

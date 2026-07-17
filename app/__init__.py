@@ -1,1 +1,1 @@
-from app.settings import settings
+from app.core.settings import settings
