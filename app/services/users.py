@@ -32,7 +32,7 @@ class UserService:
         
         if user_id:
             logger.info(
-                "Get user_id using tg_user_id from cache",
+                "Get user_id using tg_user_id",
                 extra={
                     "source": "cache",
                     "user_id": user_id,
@@ -51,7 +51,7 @@ class UserService:
         
         if user_id:
             logger.info(
-                "Get user_id using tg_user_id from database",
+                "Get user_id using tg_user_id",
                 extra={
                     "source": "database",
                     "user_id": user_id,
@@ -245,44 +245,37 @@ class UserService:
         :param tg_user_id: Telegram ID пользователя.
         :return: Множество уникальных тегов (`set[str]`) или None, если пользователь не найден.
         """
-        # if user_id is None and tg_user_id is None:
-        #     logger.error("Missing one of the required fields: user_id, tg_user_id")
-        #     raise ValueError("Необходимо передать user_id или tg_user_id")
+        if user_id is None and tg_user_id is None:
+            logger.error("Missing one of the required fields: user_id, tg_user_id")
+            raise ValueError("Необходимо передать user_id или tg_user_id")
         
         user_gif_tag_repository = UserGifTagRepository(self.session)
-    
-        cache_key_template = "tg_user_id:{tg_user_id}:all_user_tags"
         
-        # if not tg_user_id:
-        #     tg_user_id = await redis.get(f"user_id:{user_id}")
-        # if tg_user_id:
-        cache_key = cache_key_template.format(tg_user_id=tg_user_id)
+        if not user_id:
+            user_id = await self._get_user_id_using_tg_user_id(tg_user_id)
+
+        cache_key = f"user_id:{user_id}:all_user_tags"
+        
         cached_data = await self.redis.get(cache_key)
         if cached_data:
             logger.info(
                 "Get all user tags from cache",
                 extra={
                     "source": "cache",
-                    # "user_id": user_id,
+                    "user_id": user_id,
                     "tg_user_id": tg_user_id,
                 }
             )
             return json.loads(cached_data)
         
-        filters = {}
-        join_models = [Tag]
-        # if user_id is not None:
-        #     filters[UserGifTag.user_id] = user_id
-        # else:
-        join_models.append(User)
-        filters[User.tg_id] = tg_user_id
-    
         tags = await user_gif_tag_repository.get_many_with_join(
             columns=[
                 Tag.tag
             ],
-            join_models=join_models,
-            filters=filters,
+            join_models=[
+                Tag
+            ],
+            filters={UserGifTag.user_id: user_id},
             scalars=True
         )
     
@@ -297,15 +290,12 @@ class UserService:
             return None
         tags = list(set(tags))
     
-        # resolved_tg_user_id = tg_user_id if tg_user_id is not None else result.scalars().tg_id
-        # cache_key = cache_key_template.format(tg_user_id=resolved_tg_user_id)
-        # await redis.set(f"user_id:{user_id}", resolved_tg_user_id, ex=600)
         await self.redis.set(cache_key, json.dumps(tags), ex=300)
     
         logger.info(
             "Set new cache for 300s",
             extra={
-                # "user_id": resolved_user_id,
+                "user_id": user_id,
                 "tg_user_id": tg_user_id,
             }
         )
@@ -313,7 +303,7 @@ class UserService:
             "Get all user tags from database",
             extra={
                 "source": "database",
-                # "user_id": user_id,
+                "user_id": user_id,
                 "tg_user_id": tg_user_id,
             }
         )
