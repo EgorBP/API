@@ -36,6 +36,12 @@ class Gif(Base):
         nullable=False
     )
 
+    file_hash: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=False
+    )
+
 
 class Tag(Base):
     __tablename__ = "tags"
