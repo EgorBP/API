@@ -11,6 +11,6 @@ async def verify_secret_key(key: str = Security(api_key_header)):
     if key != settings.BOT_API_SECRET:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный секретный ключ доступа"
+            detail="Incorrect auth key"
         )
     return key

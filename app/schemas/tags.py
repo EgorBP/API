@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 # ===== Тег =====
@@ -11,6 +11,4 @@ class TagCreate(TagBase):
 class TagOut(TagBase):
     id: int
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = ConfigDict(from_attributes=True)

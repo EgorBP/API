@@ -52,22 +52,23 @@ class SearchRepository:
             .join(Tag, UserGifTag.tag_id == Tag.id)
             .where(Tag.tag.in_(tags))
             .group_by(UserGifTag.gif_id)
-            .having(func.count(distinct(Tag.tag)) == len(set(tags)))
+            .having(func.count(distinct(Tag.tag)) == len(tags))
             .subquery()
         )
         
         stmt = (
             select(
-                UserGifTag.gif_id,
+                Gif.id,
                 Gif.file_path,
                 func.array_agg(Tag.tag).label("tags")
             )
             .select_from(UserGifTag)
             .join(Gif, UserGifTag.gif_id == Gif.id)
             .join(Tag, UserGifTag.tag_id == Tag.id)
+            .order_by(Gif.id.desc())
             .where(UserGifTag.user_id == user_id)
             .group_by(
-                UserGifTag.gif_id,
+                Gif.id,
                 Gif.file_path
             )
         )
@@ -79,8 +80,7 @@ class SearchRepository:
             stmt = stmt.join(filter_query, UserGifTag.gif_id == filter_query.c.gif_id)
         
         if cursor_id:
-            stmt = stmt.order_by(UserGifTag.gif_id.desc())
-            stmt = stmt.where(UserGifTag.gif_id < cursor_id)
+            stmt = stmt.where(Gif.id < cursor_id)
         
         if limit:
             stmt = stmt.limit(limit)

@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories import _BaseCRUD
 from app.models import UserGifTag
 from sqlalchemy.orm.attributes import InstrumentedAttribute
-from typing import Sequence
+from typing import Sequence, Final, overload, Literal
 from sqlalchemy import select, Row
 from typing import TypeAlias, Any
 from app.models import User, Gif, Tag
@@ -11,26 +11,27 @@ from app.utils import get_orm_columns
 JoinModel: TypeAlias = type[User | Gif | Tag]
 
 
-class UserGifTagRepository(_BaseCRUD):
+class UserGifTagRepository(_BaseCRUD[UserGifTag]):
     """
     CRUD для модели UserGifTag.
 
     Переопределяется только логика создания связи.
     Остальные операции наследуются от BaseCRUD.    
     """
+    _model: Final = UserGifTag
 
     def __init__(
             self, 
             session: AsyncSession
     ):
-        super().__init__(session, model=UserGifTag)
+        super().__init__(session)
 
     async def create_user_gif_tag(
             self,
             user_id: int,
             gif_id: int,
             tag_id: int,
-    ):
+    ) -> _model:
         """
         Создаёт связь между пользователем, гифкой и тегом
         или возвращает существующую.
@@ -47,13 +48,33 @@ class UserGifTagRepository(_BaseCRUD):
             UserGifTag.tag_id: tag_id,
         })
     
+    @overload
     async def get_many_with_join(
             self,
             columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute,
+            scalars: Literal[False] = False,
             join_models: Sequence[JoinModel] | JoinModel | None = None,
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
-            scalars: bool = False
-    ) ->  list[Row[tuple]] | list[Any]:
+    ) ->  list[Row[tuple[Any]]]:
+        ...
+    
+    @overload
+    async def get_many_with_join(
+            self,
+            columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute,
+            scalars: Literal[True],
+            join_models: Sequence[JoinModel] | JoinModel | None = None,
+            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
+    ) ->  list[Any]:
+        ...
+    
+    async def get_many_with_join(
+            self,
+            columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute,
+            scalars: bool = False,
+            join_models: Sequence[JoinModel] | JoinModel | None = None,
+            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
+    ) ->  list[Row[tuple[Any]]] | list[Any]:
         """
         Метод получения записей из таблицы `UserGifTag` с фильтрацией по колонкам 
         и возможностью сделать inner join возможных таблиц.
@@ -69,7 +90,7 @@ class UserGifTagRepository(_BaseCRUD):
             columns = (columns,)
             
         if not columns:
-            columns = get_orm_columns(self.model)
+            columns = get_orm_columns(self._model)
 
         stmt = select(*columns).select_from(UserGifTag)
 

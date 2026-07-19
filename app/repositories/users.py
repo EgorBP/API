@@ -1,3 +1,5 @@
+from typing import Final
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories import _BaseCRUD
 from app.models import User
@@ -10,17 +12,18 @@ class UserRepository(_BaseCRUD):
     Переопределяется только логика создания пользователя.
     Остальные операции наследуются от BaseCRUD.
     """
+    _model: Final = User
 
     def __init__(
             self, 
             session: AsyncSession
     ):
-        super().__init__(session, model=User)
+        super().__init__(session)
 
     async def create_user(
             self,
             tg_id: int,
-    ):
+    ) -> _model:
         """
         Создаёт нового пользователя в базе данных или возвращает существующего.
 

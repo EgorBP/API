@@ -1,5 +1,4 @@
-from pydantic import BaseModel
-from enum import Enum
+from pydantic import BaseModel, ConfigDict
 
 
 # ===== Пользователь =====
@@ -12,6 +11,4 @@ class UserCreate(UserBase):
 class UserOut(UserBase):
     id: int
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = ConfigDict(from_attributes=True)

@@ -1,26 +1,28 @@
+from typing import Final
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Tag
 from app.repositories import _BaseCRUD
 
 
-class TagRepository(_BaseCRUD):
+class TagRepository(_BaseCRUD[Tag]):
     """
     CRUD для модели Tag.
 
     Переопределяется только логика создания записей.
     Остальные операции (get / update / delete) наследуются от BaseCRUD.
     """
+    _model: Final = Tag
 
     def __init__(
             self, 
             session: AsyncSession
     ):
-        super().__init__(session, model=Tag)
+        super().__init__(session)
 
     async def create_tag(
             self,
             tag: str,
-    ):
+    ) -> _model:
         """
         Создаёт новый тег в базе данных или возвращает существующий.
 
