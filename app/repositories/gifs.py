@@ -1,26 +1,30 @@
+from typing import Final
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories import _BaseCRUD
 from app.models import Gif
 
 
-class GifRepository(_BaseCRUD):
+# TODO: update dockstring
+class GifRepository(_BaseCRUD[Gif]):
     """
     CRUD для модели Gif.
     
     Переопределяется только логика создания записей.
     Остальные операции наследуются от BaseCRUD.
     """
-    
+    _model: Final = Gif
+
     def __init__(
             self, 
             session: AsyncSession
     ):
-        super().__init__(session, model=Gif)
+        super().__init__(session)
 
     async def create_gif(
             self,
-            tg_gif_id: str,
-    ):
+            file_path: str,
+            file_hash: str
+    ) -> _model:
         """
         Создаёт запись Gif в базе данных с указанным tg_gif_id.
 
@@ -38,5 +42,6 @@ class GifRepository(_BaseCRUD):
         :return: Row с колонками модели `Gif` после выполнения операции.
         """
         return await super().create_one({
-            Gif.tg_gif_id: tg_gif_id
+            Gif.file_path: file_path,
+            Gif.file_hash: file_hash
         })

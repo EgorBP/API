@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
-from app.core.exceptions import TgUserNotFoundError, UserGifsNotFoundError
+from app.core.exceptions import TgUserNotFoundError, UserGifsNotFoundError, GifNotFoundError
 
 
 class AppExceptionHandlers:
@@ -30,6 +30,7 @@ class AppExceptionHandlers:
         app.add_exception_handler(SQLAlchemyError, self._handle_sqlalchemy_error)
         app.add_exception_handler(TgUserNotFoundError, self._handle_tg_user_not_found_error)
         app.add_exception_handler(UserGifsNotFoundError, self._handle_gifs_not_found_error)
+        app.add_exception_handler(GifNotFoundError, self._handle_gif_not_found_error)
 
     async def _handle_value_error(self, request: Request, exc: ValueError) -> JSONResponse:
         self.logger.warning(
@@ -46,7 +47,7 @@ class AppExceptionHandlers:
     async def _handle_validation_error(
         self,
         request: Request,
-        exc: RequestValidationError,
+        exc: RequestValidationError
     ) -> JSONResponse:
         errors = exc.errors()
 
@@ -68,7 +69,7 @@ class AppExceptionHandlers:
     async def _handle_integrity_error(
         self,
         request: Request,
-        exc: IntegrityError,
+        exc: IntegrityError
     ) -> JSONResponse:
         detail, status_code = self._map_integrity_error(exc)
 
@@ -87,7 +88,7 @@ class AppExceptionHandlers:
     async def _handle_operational_error(
         self,
         request: Request,
-        exc: OperationalError,
+        exc: OperationalError
     ) -> JSONResponse:
         self.logger.exception(
             "Database operational error on %s %s",
@@ -102,7 +103,7 @@ class AppExceptionHandlers:
     async def _handle_sqlalchemy_error(
         self,
         request: Request,
-        exc: SQLAlchemyError,
+        exc: SQLAlchemyError
     ) -> JSONResponse:
         self.logger.exception(
             "SQLAlchemy error on %s %s",
@@ -117,7 +118,7 @@ class AppExceptionHandlers:
     async def _handle_tg_user_not_found_error(
             self,
             request: Request,
-            exc: TgUserNotFoundError,
+            exc: TgUserNotFoundError
     ) -> JSONResponse:
         self.logger.warning(
             "User not found on %s %s",
@@ -136,7 +137,7 @@ class AppExceptionHandlers:
     async def _handle_gifs_not_found_error(
             self,
             request: Request,
-            exc: UserGifsNotFoundError,
+            exc: UserGifsNotFoundError
     ) -> JSONResponse:
         self.logger.info(
             "User GIF's not found on %s %s",
@@ -153,7 +154,29 @@ class AppExceptionHandlers:
             status_code=404,
             content={"detail": str(exc)},
         )
+    
+    async def _handle_gif_not_found_error(
+            self,
+            request: Request,
+            exc: GifNotFoundError
+    ):
+        self.logger.warning(
+            "Gif not found on %s %s",
+            request.method,
+            request.url,
+            extra={
+                "gif_id": exc.gif_id,
+                "user_id": exc.user_id
+            }
+        )
 
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "detail": str(exc),
+                "gif_id": exc.gif_id
+            },
+        )
 
     @staticmethod
     def _compact_validation_errors(errors: list[dict[str, Any]]) -> list[str]:

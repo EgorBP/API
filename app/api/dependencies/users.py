@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
@@ -14,11 +14,26 @@ logger = logging.getLogger("app.dependencies.users")
 
 # TODO: update dockstring
 async def get_user_id_or_create_by_tg_user_id(
+        request: Request,
         session: AsyncSession = Depends(get_db),
         redis: Redis = Depends(get_redis),
-        user_id: int | None = None,
-        tg_user_id: int | None = None
 ) -> int:
+    tg_user_id_raw = request.path_params.get("tg_user_id")
+    user_id_raw = request.path_params.get("user_id")
+    
+    if user_id_raw is not None:
+        return int(user_id_raw)
+    
+    if tg_user_id_raw is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bad Request: authorization data was not transmitted."
+        )
+    else:
+        tg_user_id = int(tg_user_id_raw)
+    
+    user_id = await redis.get(f"tg_user_id:{tg_user_id}")
+
     async def create_user_alias():
         await redis.set(f"tg_user_id:{tg_user_id}", user_id, ex=604800)
 
@@ -29,17 +44,6 @@ async def get_user_id_or_create_by_tg_user_id(
                 "tg_user_id": tg_user_id,
             }
         )
-
-    if user_id is not None:
-        return user_id
-    
-    if not tg_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bad Request: authorization data was not transmitted."
-        ) 
-    
-    user_id = await redis.get(f"tg_user_id:{tg_user_id}")
 
     if user_id:
         logger.info(

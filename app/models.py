@@ -17,7 +17,7 @@ class User(Base):
     tg_id: Mapped[int] = mapped_column(
         BigInteger,
         unique=True,
-        index=True,
+        index=True,     # If delete it alembic can create useless migration. But now in database exist only one index 
         nullable=False
     )
 
@@ -31,13 +31,13 @@ class Gif(Base):
     )
 
     file_path: Mapped[str] = mapped_column(
-        String(255),
+        String(),
         unique=True,
         nullable=False
     )
 
     file_hash: Mapped[str] = mapped_column(
-        String(255),
+        String(64),
         unique=True,
         nullable=False
     )

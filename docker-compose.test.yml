@@ -24,7 +24,7 @@ services:
   tests:
     build: .
     env_file:
-      - .env.docker.test
+      - envs/.env.docker.test
     volumes:
       - ./tests:/app/tests
     depends_on:

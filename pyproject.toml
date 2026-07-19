@@ -40,6 +40,7 @@ dependencies = [
     "redis>=8.0.1",
     "pydantic-settings>=2.14.2",
     "pyrefly>=0.60.0",
+    "python-multipart>=0.0.32",
 ]
 
 [tool.pytest.ini_options]

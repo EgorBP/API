@@ -1,15 +1,18 @@
+import hashlib
+from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Sequence
 from redis.asyncio import Redis
 import json
 import logging
 
-from app.core.exceptions import UserGifsNotFoundError
+from app.core.exceptions import UserGifsNotFoundError, GifNotFoundError, UserTagsNotFoundError
 from app.models import UserGifTag, User, Gif, Tag
 from app.schemas.common import UserGifsCursorPaginatedResponse, CursorPaginatedResponse, CursorPaginationMeta
 from app.schemas.users import UserOut
-from app.schemas.gifs import GifOut
+from app.schemas.gifs import GifOut, GifCreate, GifUpdate
 from app.repositories import UserRepository, UserGifTagRepository, TagRepository, GifRepository, SearchRepository
+from app.services.interfaces import StorageProvider
 
 logger = logging.getLogger("app.service.users")
 
@@ -20,18 +23,16 @@ class UserService:
             self,
             session: AsyncSession,
             redis: Redis,
+            storage: StorageProvider,
             user_id: int,
     ):
+        self.storage = storage
+        self.user_id = user_id
+        
         self.session = session
         self.redis = redis
-        self.user_id = user_id
-
-        self.user_gif_tag_repository = UserGifTagRepository(self.session)
-        self.user_repository = UserRepository(self.session)
-        self.tag_repository = TagRepository(self.session)
-        self.gif_repository = GifRepository(self.session)
-        self.search_repository = SearchRepository(self.session)
-
+        self.base_user_cache_path = f"user_id:{self.user_id}"
+        
     async def get_user_gifs_with_tags(
             self,
             limit: int,
@@ -81,6 +82,8 @@ class UserService:
         :return: Словарь с данными пользователя, гифок и тегов в формате, описанном выше,
                  или None, если пользователь не найден.
         """
+        search_repository = SearchRepository(self.session)
+        
         if isinstance(gif_ids, int):
             gif_ids = (gif_ids,)
     
@@ -96,7 +99,7 @@ class UserService:
         gif_ids_string = ",".join(normalized_gif_ids) if normalized_gif_ids else "all"
 
         cursor_string = str(cursor_id) if cursor_id is not None else "first_page"
-        cache_key = f"user_id:{self.user_id}:gif_ids:{gif_ids_string}:tags:{tags_string}:cursor:{cursor_string}:limit:{limit}"
+        cache_key = f"{self.base_user_cache_path}:gif_ids:{gif_ids_string}:tags:{tags_string}:cursor:{cursor_string}:limit:{limit}"
     
         cached_data = await self.redis.get(cache_key)
         if cached_data:
@@ -109,7 +112,7 @@ class UserService:
             )
             return UserGifsCursorPaginatedResponse.model_validate_json(cached_data)
         
-        rows = await self.search_repository.search_user_gifs_with_tags(
+        rows = await search_repository.search_user_gifs_with_tags(
             user_id=self.user_id,
             gif_ids=gif_ids,
             tags=tags,
@@ -132,11 +135,7 @@ class UserService:
             has_next = False
         
         gifs_data = [
-            GifOut(
-                id=row.gif_id,
-                tg_gif_id=row.tg_gif_id,
-                tags=row.tags
-            )
+            GifOut.model_validate(row._mapping)
             for row in rows
         ]
         
@@ -174,12 +173,14 @@ class UserService:
     
     async def get_all_user_tags(
             self,
-    ) -> set[str] | None:
+    ) -> set[str]:
         """
         Возвращает все уникальные теги, связанные с GIF пользователя.
     
         :return: Множество уникальных тегов (`set[str]`) или None, если пользователь не найден.
         """
+        user_gif_tag_repository = UserGifTagRepository(self.session)
+
         cache_key = f"user_id:{self.user_id}:all_user_tags"
         
         cached_data = await self.redis.get(cache_key)
@@ -193,7 +194,7 @@ class UserService:
             )
             return json.loads(cached_data)
         
-        tags = await self.user_gif_tag_repository.get_many_with_join(
+        tags = await user_gif_tag_repository.get_many_with_join(
             columns=[
                 Tag.tag
             ],
@@ -212,8 +213,9 @@ class UserService:
                     "user_id": self.user_id,
                 }
             )
-            return None
-        tags = list(set(tags))
+            raise UserTagsNotFoundError(self.user_id)
+        
+        tags = list(tags)
     
         await self.redis.set(cache_key, json.dumps(tags), ex=300)
     
@@ -231,20 +233,71 @@ class UserService:
             }
         )
     
-        return tags
+        return set(tags)
     
     async def add_new_user_gif(
             self,
-            user_id: int | None = None,
+            gif_file: UploadFile,
+            gif_create: GifCreate
+    ) -> GifOut:
+        tag_repository = TagRepository(self.session)
+        gif_repository = GifRepository(self.session)
+        user_gif_tag_repository = UserGifTagRepository(self.session)
+        
+        tags = gif_create.tags
+        
+        filename, file_hash = await self._create_unique_filename_and_hash(gif_file)
+        
+        gif = await gif_repository.get_one_orm(
+            filters={Gif.file_hash: file_hash}
+        )
+        
+        try:
+            if gif is None:
+                file_path = await self.storage.save_file(gif_file, filename)
+                gif = await gif_repository.create_gif(
+                    file_path=file_path,
+                    file_hash=file_hash
+                )
+                logger.info(
+                    "Create new gif",
+                    extra={
+                        "user_id": self.user_id,
+                        "gif_id": gif.id
+                    },
+                    
+                )
             
-    ):
-        pass
+            gif_id = gif.id
+            await self._set_new_user_tags_on_gif_internal(
+                gif_id=gif_id,
+                gif_update=GifUpdate(tags=tags),
+                tag_repository=tag_repository,
+                user_gif_tag_repository=user_gif_tag_repository
+            )
+
+            await self.session.commit()
     
+            return GifOut(
+                id=gif_id,
+                file_path=gif.file_path,
+                tags=tags
+            )
+        
+        except Exception:
+            await self.session.rollback()
+            logger.exception(
+                "Error when create new GIF",
+                extra={
+                    "user_id": self.user_id,
+                }
+            )
+            raise
+
     async def set_new_user_tags_on_gif(
             self,
-            tg_user_id: int,
             gif_id: int,
-            tags: set[str] | str,
+            gif_update: GifUpdate,
     ) -> None:
         """
         Добавляет (или обновляет) связь между пользователем, гифкой и её тегами.
@@ -256,197 +309,62 @@ class UserService:
         - для каждой комбинации (user, gif, tag) создастся запись в таблице `user_gif_tags`.
         - старые теги будут удалены.
     
-        :param tg_user_id: Telegram ID пользователя.
         :param gif_id: Telegram ID гифки.
         :param tags: Один тег или список тегов, которые будут связаны с гифкой.
         :return: None (изменения фиксируются в базе данных через session).
         """
+        tag_repository = TagRepository(self.session)
+        user_gif_tag_repository = UserGifTagRepository(self.session)
+        gif_repository = GifRepository(self.session)
         
-        tags = {tags} if isinstance(tags, str) else set(tags)
+        if await gif_repository.get_one(
+                columns=Gif.id,
+                filters={Gif.id: gif_id}
+        ):
+            await self._set_new_user_tags_on_gif_internal(
+                gif_id=gif_id,
+                gif_update=gif_update,
+                tag_repository=tag_repository,
+                user_gif_tag_repository=user_gif_tag_repository
+            )
+        else:
+            raise GifNotFoundError(
+                gif_id=gif_id,
+                user_id=self.user_id
+            )
     
-        old_data = await self.get_user_gifs_with_tags(tg_user_id=tg_user_id, gif_ids=gif_id, limit=1)
-        
-        delete_tags = set()
-        new_tags = tags
-        if old_data:
-            old_tags = set(old_data.gifs_data[0].tags)
-            if old_tags:
-                delete_tags = old_tags - tags
-                new_tags = tags - old_tags
-        
-        needed_tags = delete_tags | new_tags
-    
-        try:
-            # Вставляем новые теги
-            if new_tags:
-                await self.tag_repository.create_many(
-                    [
-                        {Tag.tag: tag}
-                        for tag in new_tags
-                    ],
-                    ignore_conflicts=True
-                )
-            
-            # Получаем tag_id и расфасовываем
-            rows = await self.tag_repository.get_many(
-                columns=(Tag.id, Tag.tag),
-                filters={
-                    Tag.tag: needed_tags
-                }
-            )
-            tag_to_id = {
-                row.tag: row.id
-                for row in rows
-            }
-            delete_tags_ids = [
-                tag_to_id[tag]
-                for tag in delete_tags
-            ]
-            new_tags_ids = [
-                tag_to_id[tag]
-                for tag in new_tags
-            ]
-            
-            # Создаем пользователя и GIF
-            if not old_data:
-                user = await self.user_repository.create_user(tg_user_id)
-                gif = await self.gif_repository.create_gif(gif_id)
-            
-            # Снимаем связь между старыми тегами и гифкой
-            if delete_tags:
-                await self.user_gif_tag_repository.delete_many(
-                    filters={
-                        UserGifTag.user_id: old_data.id,
-                        UserGifTag.gif_id: old_data.gifs_data[0].id,
-                        UserGifTag.tag_id: delete_tags_ids,
-                    }
-                )
-            
-            # Создаем связь между новыми тегами, GIF и пользователем
-            if new_tags_ids:
-                await self.user_gif_tag_repository.create_many(
-                    [
-                        {
-                            UserGifTag.user_id: old_data.id if old_data else user.id,
-                            UserGifTag.gif_id: old_data.gifs_data[0].id if old_data else gif.id,
-                            UserGifTag.tag_id: new_tag_id
-                        }
-                        for new_tag_id in new_tags_ids
-                    ]
-                )
-            
-            await self.session.commit()
-            logger.info(
-                "User GIF tags updated",
-                extra={
-                    "tg_user_id": tg_user_id,
-                }
-            )
-            
-            # Инвалидируем кэш
-            keys = []
-            async for key in self.redis.scan_iter(f"tg_user_id:{tg_user_id}:*"):
-                keys.append(key)
-            if keys:
-                await self.redis.unlink(*keys)
-            logger.info(
-                "User cache invalidated",
-                extra={
-                    "tg_user_id": tg_user_id,
-                }
-            )
-        
-        except Exception:
-            await self.session.rollback()
-            logger.exception(
-                "Error when update tags for user GIF",
-                extra={
-                    "tg_user_id": tg_user_id,
-                }
-            )
-            raise
-    
-    async def delete_user_gif_tags(
+    async def unlink_user_from_gif(
             self,
-            tg_user_id: int,
-            gif_id: str,
-            gif_id_type: str | None = None
-    ) -> int | None:
+            gif_ids: list[int],
+    ) -> int:
         """
         Удаляет GIF вместе с тегами для конкретного пользователя. 
         Делает commit если операция прошла успешно и rollback в случае возникновения ошибок.
         
         Удаляет весь кэш пользователя.
     
-        :param async_session: Объект асинхронной сессии SQLAlchemy.
-        :param redis: Объект асинхронной сессии Redis.
-        :param tg_user_id: Telegram ID пользователя.
-        :param gif_id: ID для GIF которое нужно удалить у юзера.
-        :param gif_id_type: Тип ID: 'tg' - Telegram ID, 'db' - ID из внутренней базы.
+        :param gif_ids: ID для GIF которое нужно удалить у юзера.
     
         :return: Количество удаленных строк
         """
-        if not gif_id_type or gif_id_type == 'tg':
-            gif_id = await self.gif_repository.get_many(columns=Gif.id, filters={Gif.tg_gif_id: gif_id})
-            if gif_id:
-                gif_id = gif_id[0][0]
-            else:
-                logger.info(
-                    "Gif not found",
-                    extra={
-                        "source": "database",
-                        "tg_user_id": tg_user_id,
-                        "gif_id": gif_id,
-                        "gif_id_type": gif_id_type
-                    }
-                )
-                return None
-        elif gif_id_type == 'db':
-            gif_id = int(gif_id)
-        
-        
-        user_id = await self.user_repository.get_many(columns=User.id, filters={User.tg_id: tg_user_id})
-        if user_id:
-            logger.info(
-                "User to not found",
-                extra={
-                    "source": "database",
-                    "tg_user_id": tg_user_id,
-                    "gif_id": gif_id,
-                    "gif_id_type": gif_id_type
-                }
-            )
-    
-            user_id = user_id[0][0]
-        else:
-            return None
+        user_gif_tag_repository = UserGifTagRepository(self.session)
         
         try:
-            result = await self.user_gif_tag_repository.delete_many(filters={
-                UserGifTag.user_id: user_id,
-                UserGifTag.gif_id: gif_id,
-            })
+            result = await user_gif_tag_repository.delete_many(
+                filters={
+                    UserGifTag.user_id: self.user_id,
+                    UserGifTag.gif_id: gif_ids,
+                }
+            )
             await self.session.commit()
             logger.info(
-                "User GIF deleted",
+                f"{result} user GIFs deleted",
                 extra={
-                    "tg_user_id": tg_user_id,
-                    "gif_id": gif_id,
-                    "gif_id_type": gif_id_type
+                    "user_id": self.user_id,
                 }
             )
             
-            keys = []
-            async for key in self.redis.scan_iter(f"tg_user_id:{tg_user_id}:*"):
-                keys.append(key)
-            if keys:
-                await self.redis.unlink(*keys)   
-            logger.info(
-                "User cache invalidated",
-                extra={
-                    "tg_user_id": tg_user_id,
-                }
-            )
+            await self._invalidate_all_user_cache()  
                 
             return result
         
@@ -455,7 +373,123 @@ class UserService:
             logger.exception(
                 "Error when delete user GIF and tags",
                 extra={
-                    "tg_user_id": tg_user_id,
+                    "user_id": self.user_id,
+                }
+            )
+            raise
+
+    async def _invalidate_all_user_cache(
+            self
+    ):
+        keys = []
+        objects_count = 0
+        batch_size = 500
+
+        async for key in self.redis.scan_iter(f"{self.base_user_cache_path}:*"):
+            keys.append(key)
+
+            if len(keys) >= batch_size:
+                await self.redis.unlink(*keys)
+                objects_count += len(keys)
+                keys = []
+
+        if keys:
+            objects_count += len(keys)
+            await self.redis.unlink(*keys)
+
+        logger.info(
+            f"User cache ({objects_count} elements) invalidated",
+            extra={
+                "user_id": self.user_id,
+            }
+        )
+
+    async def _create_unique_filename_and_hash(
+            self,
+            file: UploadFile
+    ) -> tuple[str, str]:
+        await file.seek(0)
+
+        sha256_hash = hashlib.sha256()
+        while chunk := await file.read(1024 * 1024):
+            sha256_hash.update(chunk)
+
+        file_hash = sha256_hash.hexdigest()
+
+        await file.seek(0)
+
+        file_ext = file.filename.split(".")[-1] if "." in file.filename else "gif"
+        unique_filename = f"{file_hash}.{file_ext.lower()}"
+
+        return unique_filename, file_hash
+
+    async def _set_new_user_tags_on_gif_internal(
+            self,
+            gif_id: int,
+            gif_update: GifUpdate,
+            tag_repository: TagRepository,
+            user_gif_tag_repository: UserGifTagRepository
+    ) -> None:
+        tags = gif_update.tags
+
+        try:
+            # Вставляем теги
+            await tag_repository.create_many(
+                [
+                    {Tag.tag: tag}
+                    for tag in tags
+                ],
+                ignore_conflicts=True
+            )
+
+            # Получаем tag_id
+            tag_ids = await tag_repository.get_many(
+                columns=Tag.id,
+                filters={
+                    Tag.tag: tags
+                },
+                scalars=True
+            )
+
+            # Снимаем связь между старыми тегами и гифкой
+            await user_gif_tag_repository.delete_many(
+                filters={
+                    UserGifTag.user_id: self.user_id,
+                    UserGifTag.gif_id: gif_id,
+                }
+            )
+
+            # Создаем связь между новыми тегами, GIF и пользователем
+            await user_gif_tag_repository.create_many(
+                [
+                    {
+                        UserGifTag.user_id: self.user_id,
+                        UserGifTag.gif_id: gif_id,
+                        UserGifTag.tag_id: tag_id
+                    }
+                    for tag_id in tag_ids
+                ]
+            )
+
+            await self.session.commit()
+            logger.info(
+                "User GIF tags updated",
+                extra={
+                    "user_id": self.user_id,
+                    "gif_id": gif_id
+                }
+            )
+
+            # Инвалидируем кэш
+            await self._invalidate_all_user_cache()
+
+        except Exception:
+            await self.session.rollback()
+            logger.exception(
+                "Error when update tags for user GIF",
+                extra={
+                    "user_id": self.user_id,
+                    "gif_id": gif_id
                 }
             )
             raise
