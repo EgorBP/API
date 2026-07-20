@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
-from app.core.exceptions import TgUserNotFoundError, UserGifsNotFoundError, GifNotFoundError
+from app.core.exceptions import TgUserNotFoundError, UserGifsNotFoundError, GifNotFoundError, UserTagsNotFoundError
 
 
 class AppExceptionHandlers:
@@ -177,6 +177,28 @@ class AppExceptionHandlers:
                 "gif_id": exc.gif_id
             },
         )
+    
+    async def _handle_user_tags_not_found_error(
+            self,
+            request: Request,
+            exc: UserTagsNotFoundError
+    ):
+        self.logger.info(
+            "User tags not found %s %s",
+            request.method,
+            request.url,
+            extra={
+                "user_id": exc.user_id
+            }
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "detail": str(exc),
+            },
+        )
+
 
     @staticmethod
     def _compact_validation_errors(errors: list[dict[str, Any]]) -> list[str]:

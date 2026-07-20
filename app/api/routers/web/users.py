@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, Form
 from pydantic import ValidationError
 
-from app.api.dependencies.services import get_user_service
+from app.api.dependencies.services import get_user_library_service
 from app.api.dependencies.validation import validate_gif_file
 from app.schemas.common import UserGifsCursorPaginatedResponse
 from app.schemas.gifs import GifUpdate, GifOut, GifCreate
-from app.services import UserService
+from app.services import UserLibraryService
 
 router = APIRouter()
 
@@ -20,7 +20,7 @@ async def get_user_gifs_by_id(
         tags: set[str] | None = Query(None),
         cursor: int | None = Query(None),
         limit: int = Query(default=20, ge=1, le=100),
-        user_service: UserService = Depends(get_user_service)
+        user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
     """
     Получить GIF пользователя по его Telegram ID и идентификатору GIF.
@@ -34,7 +34,7 @@ async def get_user_gifs_by_id(
     - **tg_gif_id**: str — идентификатор GIF в Telegram
     - **tags**: list[str] — список тегов GIF
     """
-    return await user_service.get_user_gifs_with_tags(
+    return await user_library_service.get_user_gifs_with_tags(
         gif_ids=gif_ids,
         tags=tags,
         cursor_id=cursor,
@@ -48,7 +48,7 @@ async def get_user_gifs_by_id(
 )
 async def get_user_tags(
         user_id: int,
-        user_service: UserService = Depends(get_user_service)
+        user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
     """
     Получение всех тегов пользователя по его Telegram ID.
@@ -59,7 +59,7 @@ async def get_user_tags(
     **Возвращает**:
     Список тегов (list[str]) или HTTP 404, если пользователь не найден.
     """
-    return await user_service.get_all_user_tags()
+    return await user_library_service.get_all_user_tags()
 
 
 @router.post(
@@ -70,14 +70,14 @@ async def upload_new_gif(
         user_id: int,
         file: UploadFile = Depends(validate_gif_file),
         tags_form: set[str] = Form(),
-        user_service: UserService = Depends(get_user_service)
+        user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
     try:
         gif_create = GifCreate(tags=tags_form)
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors())
 
-    return await user_service.add_new_user_gif(
+    return await user_library_service.add_new_user_gif(
         gif_file=file,
         gif_create=gif_create
     )
@@ -91,7 +91,7 @@ async def update_gif_tags(
         user_id: int,
         gif_id: int,
         gif_data: GifUpdate,
-        user_service: UserService = Depends(get_user_service)
+        user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
     """
     Обновить список тегов для конкретного GIF пользователя.
@@ -102,7 +102,7 @@ async def update_gif_tags(
 
     **Returns:** HTTP 204 если операция прошла успешно
     """
-    await user_service.set_new_user_tags_on_gif(
+    await user_library_service.set_new_user_tags_on_gif(
         gif_id=gif_id,
         gif_update=gif_data
     )
@@ -116,7 +116,7 @@ async def update_gif_tags(
 async def delete_user_gif(
         user_id: int,
         gif_ids: list[int] = Query(),
-        user_service: UserService = Depends(get_user_service)
+        user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
     """
     Отвязывает GIF от пользователя, но не удаляет саму GIF из базы и хранилища.
@@ -126,6 +126,6 @@ async def delete_user_gif(
 
     **Returns:** Количество удаленных GIF
     """
-    return await user_service.unlink_user_from_gif(
+    return await user_library_service.unlink_user_from_gif(
         gif_ids=gif_ids,
     )

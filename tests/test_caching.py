@@ -4,7 +4,7 @@ from app.repositories import SearchRepository
 
 
 class TestCaching:
-    """Тесты кэширования в app/services/users.py."""
+    """Тесты кэширования в app/services/user_library.py."""
 
     async def test_second_request_hits_cache_not_db(self, client: AsyncClient, monkeypatch):
         """Второй одинаковый GET не должен идти в SearchRepository — данные берутся из Redis."""

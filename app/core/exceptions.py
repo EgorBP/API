@@ -41,4 +41,4 @@ class UserTagsNotFoundError(Exception):
     ):
         self.user_id = user_id
 
-        super().__init__(f"Tags for user with ID {self.gif_id} not found")
+        super().__init__(f"Tags for user with ID {self.user_id} not found")
