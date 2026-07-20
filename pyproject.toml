@@ -41,6 +41,8 @@ dependencies = [
     "pydantic-settings>=2.14.2",
     "pyrefly>=0.60.0",
     "python-multipart>=0.0.32",
+    "pyjwt[crypto]>=2.13.0",
+    "bcrypt>=5.0.0",
 ]
 
 [tool.pytest.ini_options]

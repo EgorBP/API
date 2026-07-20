@@ -1,4 +1,3 @@
-import hashlib
 from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Sequence
@@ -7,18 +6,19 @@ import json
 import logging
 
 from app.core.exceptions import UserGifsNotFoundError, GifNotFoundError, UserTagsNotFoundError
-from app.models import UserGifTag, User, Gif, Tag
+from app.models import UserGifTag, Gif, Tag
 from app.schemas.common import UserGifsCursorPaginatedResponse, CursorPaginatedResponse, CursorPaginationMeta
 from app.schemas.users import UserOut
 from app.schemas.gifs import GifOut, GifCreate, GifUpdate
-from app.repositories import UserRepository, UserGifTagRepository, TagRepository, GifRepository, SearchRepository
+from app.repositories import UserGifTagRepository, TagRepository, GifRepository, SearchRepository
 from app.services.interfaces import StorageProvider
+from app.utils.storage import create_unique_filename_and_hash
 
-logger = logging.getLogger("app.service.users")
+logger = logging.getLogger("app.service.user_library")
 
 
 # TODO: update dockstring
-class UserService:
+class UserLibraryService:
     def __init__(
             self,
             session: AsyncSession,
@@ -246,28 +246,23 @@ class UserService:
         
         tags = gif_create.tags
         
-        filename, file_hash = await self._create_unique_filename_and_hash(gif_file)
+        filename, file_hash = await create_unique_filename_and_hash(gif_file)
         
         gif = await gif_repository.get_one_orm(
             filters={Gif.file_hash: file_hash}
         )
         
         try:
+            log_msg = "Set new tags for exist user GIF"
             if gif is None:
                 file_path = await self.storage.save_file(gif_file, filename)
                 gif = await gif_repository.create_gif(
                     file_path=file_path,
                     file_hash=file_hash
                 )
-                logger.info(
-                    "Create new gif",
-                    extra={
-                        "user_id": self.user_id,
-                        "gif_id": gif.id
-                    },
-                    
-                )
-            
+                
+                log_msg = "Create new GIF and set tags"
+
             gif_id = gif.id
             await self._set_new_user_tags_on_gif_internal(
                 gif_id=gif_id,
@@ -277,7 +272,17 @@ class UserService:
             )
 
             await self.session.commit()
-    
+
+            logger.info(
+                log_msg,
+                extra={
+                    "user_id": self.user_id,
+                    "gif_id": gif.id
+                }
+            )
+
+            await self._invalidate_all_user_cache()
+            
             return GifOut(
                 id=gif_id,
                 file_path=gif.file_path,
@@ -287,7 +292,7 @@ class UserService:
         except Exception:
             await self.session.rollback()
             logger.exception(
-                "Error when create new GIF",
+                "Error when create new GIF or set tags",
                 extra={
                     "user_id": self.user_id,
                 }
@@ -321,12 +326,36 @@ class UserService:
                 columns=Gif.id,
                 filters={Gif.id: gif_id}
         ):
-            await self._set_new_user_tags_on_gif_internal(
-                gif_id=gif_id,
-                gif_update=gif_update,
-                tag_repository=tag_repository,
-                user_gif_tag_repository=user_gif_tag_repository
-            )
+            try:
+                await self._set_new_user_tags_on_gif_internal(
+                    gif_id=gif_id,
+                    gif_update=gif_update,
+                    tag_repository=tag_repository,
+                    user_gif_tag_repository=user_gif_tag_repository
+                )
+                
+                await self.session.commit()
+                logger.info(
+                    "User GIF tags updated",
+                    extra={
+                        "user_id": self.user_id,
+                        "gif_id": gif_id
+                    }
+                )
+
+                # Инвалидируем кэш
+                await self._invalidate_all_user_cache()
+
+            except Exception:
+                await self.session.rollback()
+                logger.exception(
+                    "Error when update tags for user GIF",
+                    extra={
+                        "user_id": self.user_id,
+                        "gif_id": gif_id
+                    }
+                )
+                raise
         else:
             raise GifNotFoundError(
                 gif_id=gif_id,
@@ -404,25 +433,6 @@ class UserService:
             }
         )
 
-    async def _create_unique_filename_and_hash(
-            self,
-            file: UploadFile
-    ) -> tuple[str, str]:
-        await file.seek(0)
-
-        sha256_hash = hashlib.sha256()
-        while chunk := await file.read(1024 * 1024):
-            sha256_hash.update(chunk)
-
-        file_hash = sha256_hash.hexdigest()
-
-        await file.seek(0)
-
-        file_ext = file.filename.split(".")[-1] if "." in file.filename else "gif"
-        unique_filename = f"{file_hash}.{file_ext.lower()}"
-
-        return unique_filename, file_hash
-
     async def _set_new_user_tags_on_gif_internal(
             self,
             gif_id: int,
@@ -432,64 +442,40 @@ class UserService:
     ) -> None:
         tags = gif_update.tags
 
-        try:
-            # Вставляем теги
-            await tag_repository.create_many(
-                [
-                    {Tag.tag: tag}
-                    for tag in tags
-                ],
-                ignore_conflicts=True
-            )
+        # Вставляем теги
+        await tag_repository.create_many(
+            [
+                {Tag.tag: tag}
+                for tag in tags
+            ],
+            ignore_conflicts=True
+        )
 
-            # Получаем tag_id
-            tag_ids = await tag_repository.get_many(
-                columns=Tag.id,
-                filters={
-                    Tag.tag: tags
-                },
-                scalars=True
-            )
+        # Получаем tag_id
+        tag_ids = await tag_repository.get_many(
+            columns=Tag.id,
+            filters={
+                Tag.tag: tags
+            },
+            scalars=True
+        )
 
-            # Снимаем связь между старыми тегами и гифкой
-            await user_gif_tag_repository.delete_many(
-                filters={
+        # Снимаем связь между старыми тегами и гифкой
+        await user_gif_tag_repository.delete_many(
+            filters={
+                UserGifTag.user_id: self.user_id,
+                UserGifTag.gif_id: gif_id,
+            }
+        )
+
+        # Создаем связь между новыми тегами, GIF и пользователем
+        await user_gif_tag_repository.create_many(
+            [
+                {
                     UserGifTag.user_id: self.user_id,
                     UserGifTag.gif_id: gif_id,
+                    UserGifTag.tag_id: tag_id
                 }
-            )
-
-            # Создаем связь между новыми тегами, GIF и пользователем
-            await user_gif_tag_repository.create_many(
-                [
-                    {
-                        UserGifTag.user_id: self.user_id,
-                        UserGifTag.gif_id: gif_id,
-                        UserGifTag.tag_id: tag_id
-                    }
-                    for tag_id in tag_ids
-                ]
-            )
-
-            await self.session.commit()
-            logger.info(
-                "User GIF tags updated",
-                extra={
-                    "user_id": self.user_id,
-                    "gif_id": gif_id
-                }
-            )
-
-            # Инвалидируем кэш
-            await self._invalidate_all_user_cache()
-
-        except Exception:
-            await self.session.rollback()
-            logger.exception(
-                "Error when update tags for user GIF",
-                extra={
-                    "user_id": self.user_id,
-                    "gif_id": gif_id
-                }
-            )
-            raise
+                for tag_id in tag_ids
+            ]
+        )

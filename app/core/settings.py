@@ -14,6 +14,10 @@ class Settings(BaseSettings):
 
     BOT_API_SECRET: str
 
+    JWT_SECRET_KEY: str
+    JWT_ALGORITHM: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int
+
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
     MEDIA_DIR: Path = BASE_DIR / "media" / "gifs"
 
