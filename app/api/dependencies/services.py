@@ -2,10 +2,10 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
-from app.api.dependencies.users import get_user_id_or_create_by_tg_user_id
 from app.core.database import get_db
 from app.services import UserLibraryService
 from app.core.redis import get_redis
+from app.services.auth import AuthService
 from app.services.storage import LocalStorageProvider
 
 
@@ -13,11 +13,17 @@ from app.services.storage import LocalStorageProvider
 async def get_user_library_service(
         session: AsyncSession = Depends(get_db),
         redis: Redis = Depends(get_redis),
-        user_id: int = Depends(get_user_id_or_create_by_tg_user_id)
 ):
     return UserLibraryService(
         session=session,
         redis=redis,
         storage=LocalStorageProvider(),
-        user_id=user_id
+    )
+
+
+async def get_auth_service(
+        session: AsyncSession = Depends(get_db)
+):
+    return AuthService(
+        session=session
     )

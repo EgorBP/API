@@ -16,18 +16,3 @@ class CursorPaginationMeta(BaseModel, Generic[CursorT]):
 class CursorPaginatedResponse(BaseModel, Generic[DataT, CursorT]):
     data: list[DataT]
     pagination: CursorPaginationMeta[CursorT] | None = None
-
-
-class UserGifResponse(BaseModel):
-    user: UserOut
-    gif: GifOut
-
-
-class UserGifsResponse(BaseModel):
-    user: UserOut
-    gifs: list[GifOut]
-
-
-class UserGifsCursorPaginatedResponse(BaseModel):
-    user: UserOut
-    gifs: CursorPaginatedResponse[GifOut, int]

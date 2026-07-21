@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     REDIS_PORT: int
 
     BOT_API_SECRET: str
+    BOT_TOKEN: str
 
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str
