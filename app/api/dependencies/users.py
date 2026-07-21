@@ -93,6 +93,8 @@ async def get_user_id_or_create_by_tg_user_id(
             )
             
             await create_user_alias()
+            
+            return user_id
 
         except Exception:
             await session.rollback()

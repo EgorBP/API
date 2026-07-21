@@ -4,7 +4,8 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
-from app.core.exceptions import TgUserNotFoundError, UserGifsNotFoundError, GifNotFoundError, UserTagsNotFoundError
+from app.core.exceptions import TgUserNotFoundError, UserGifsNotFoundError, GifNotFoundError, UserTagsNotFoundError, \
+    InvalidCredentialsError
 
 
 class AppExceptionHandlers:
@@ -23,14 +24,21 @@ class AppExceptionHandlers:
 
         :param app: FastAPI application where handlers will be registered.
         """
-        app.add_exception_handler(ValueError, self._handle_value_error)
-        app.add_exception_handler(RequestValidationError, self._handle_validation_error)
-        app.add_exception_handler(IntegrityError, self._handle_integrity_error)
-        app.add_exception_handler(OperationalError, self._handle_operational_error)
-        app.add_exception_handler(SQLAlchemyError, self._handle_sqlalchemy_error)
-        app.add_exception_handler(TgUserNotFoundError, self._handle_tg_user_not_found_error)
-        app.add_exception_handler(UserGifsNotFoundError, self._handle_gifs_not_found_error)
-        app.add_exception_handler(GifNotFoundError, self._handle_gif_not_found_error)
+        to_register = {
+            ValueError: self._handle_value_error,
+            RequestValidationError: self._handle_validation_error,
+            IntegrityError: self._handle_integrity_error,
+            OperationalError: self._handle_operational_error,
+            SQLAlchemyError: self._handle_sqlalchemy_error,
+            TgUserNotFoundError: self._handle_tg_user_not_found_error,
+            UserGifsNotFoundError: self._handle_gifs_not_found_error,
+            GifNotFoundError: self._handle_gif_not_found_error,
+            UserTagsNotFoundError: self._handle_user_tags_not_found_error,
+            InvalidCredentialsError: self._handle_invalid_credentials_error
+        }
+        
+        for error, handler in to_register.items():
+            app.add_exception_handler(error, handler)
 
     async def _handle_value_error(self, request: Request, exc: ValueError) -> JSONResponse:
         self.logger.warning(
@@ -198,7 +206,24 @@ class AppExceptionHandlers:
                 "detail": str(exc),
             },
         )
+    
+    async def _handle_invalid_credentials_error(
+            self,
+            request: Request,
+            exc: InvalidCredentialsError
+    ):
+        self.logger.warning(
+            "Invalid credentials %s %s",
+            request.method,
+            request.url,
+        )
 
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={
+                "detail": str(exc),
+            },
+        )
 
     @staticmethod
     def _compact_validation_errors(errors: list[dict[str, Any]]) -> list[str]:

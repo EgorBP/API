@@ -3,7 +3,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, inspect, Row, Select, Update, Delete, Insert
 from app.utils import is_valid_column_for_model, get_orm_columns, validate_columns_for_model
-from typing import Sequence, Any
+from typing import Sequence, Any, overload, Literal
 from typing import TypeVar, Generic
 
 T = TypeVar("T")
@@ -183,6 +183,24 @@ class _BaseCRUD(Generic[T]):
 
         return list(result.scalars().all())
 
+    @overload
+    async def get_many(
+            self,
+            scalars: Literal[False] = False,
+            columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute | None = None,
+            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
+    ) -> list[Row[tuple[Any]]]:
+        ...
+
+    @overload
+    async def get_many(
+            self,
+            scalars: Literal[True],
+            columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute | None = None,
+            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
+    ) -> list[Any]:
+        ...
+
     async def get_many(
             self,
             columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute | None = None,
@@ -209,6 +227,24 @@ class _BaseCRUD(Generic[T]):
             result = result.scalars()
             
         return result.all()
+    
+    @overload
+    async def get_one(
+            self,
+            scalar: Literal[False] = False,
+            columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute | None = None,
+            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None
+    ) -> Row[tuple[Any]] | None:
+        ...
+    
+    @overload
+    async def get_one(
+            self,
+            scalar: Literal[True],
+            columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute | None = None,
+            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None
+    ) -> Any | None:
+        ...
 
     async def get_one(
             self,

@@ -1,25 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, Form
-from pydantic import ValidationError
+from fastapi import APIRouter, Depends, Query, UploadFile, Form
+from starlette import status
 
+from app.api.dependencies.auth import get_user_id_from_jwt
 from app.api.dependencies.services import get_user_library_service
 from app.api.dependencies.validation import validate_gif_file
-from app.schemas.common import UserGifsCursorPaginatedResponse
-from app.schemas.gifs import GifUpdate, GifOut, GifCreate
+from app.schemas.common import CursorPaginatedResponse
+from app.schemas.gifs import GifOut
 from app.services import UserLibraryService
 
 router = APIRouter()
 
 
 @router.get(
-    '/{user_id}/gifs',
-    response_model=UserGifsCursorPaginatedResponse
+    '/gifs',
+    response_model=CursorPaginatedResponse[GifOut, int]
 )
 async def get_user_gifs_by_id(
-        user_id: int,
         gif_ids: list[int] | None = Query(None),
         tags: set[str] | None = Query(None),
         cursor: int | None = Query(None),
         limit: int = Query(default=20, ge=1, le=100),
+        user_id: int = Depends(get_user_id_from_jwt),
         user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
     """
@@ -35,6 +36,7 @@ async def get_user_gifs_by_id(
     - **tags**: list[str] — список тегов GIF
     """
     return await user_library_service.get_user_gifs_with_tags(
+        user_id=user_id,
         gif_ids=gif_ids,
         tags=tags,
         cursor_id=cursor,
@@ -43,11 +45,11 @@ async def get_user_gifs_by_id(
 
 
 @router.get(
-    '/{user_id}/tags/all', 
+    '/tags/all', 
     response_model=list[str]
 )
 async def get_user_tags(
-        user_id: int,
+        user_id: int = Depends(get_user_id_from_jwt),
         user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
     """
@@ -59,38 +61,34 @@ async def get_user_tags(
     **Возвращает**:
     Список тегов (list[str]) или HTTP 404, если пользователь не найден.
     """
-    return await user_library_service.get_all_user_tags()
+    return await user_library_service.get_all_user_tags(user_id=user_id)
 
 
 @router.post(
-    '/{user_id}/gifs/new',
+    '/gifs/new',
     response_model=GifOut
 )
 async def upload_new_gif(
-        user_id: int,
         file: UploadFile = Depends(validate_gif_file),
-        tags_form: set[str] = Form(),
+        tags: set[str] = Form(),
+        user_id: int = Depends(get_user_id_from_jwt),
         user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
-    try:
-        gif_create = GifCreate(tags=tags_form)
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.errors())
-
     return await user_library_service.add_new_user_gif(
+        user_id=user_id,
         gif_file=file,
-        gif_create=gif_create
+        tags=tags
     )
 
 
 @router.put(
-    '/{user_id}/gifs/{gif_id}/tags', 
+    '/gifs/{gif_id}/tags', 
     status_code=status.HTTP_204_NO_CONTENT
 )
 async def update_gif_tags(
-        user_id: int,
         gif_id: int,
-        gif_data: GifUpdate,
+        tags: set[str],
+        user_id: int = Depends(get_user_id_from_jwt),
         user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
     """
@@ -103,19 +101,20 @@ async def update_gif_tags(
     **Returns:** HTTP 204 если операция прошла успешно
     """
     await user_library_service.set_new_user_tags_on_gif(
+        user_id=user_id,
         gif_id=gif_id,
-        gif_update=gif_data
+        tags=tags
     )
     return
 
 
 @router.delete(
-    '/{user_id}/gifs', 
+    '/gifs', 
     response_model=int
 )
 async def delete_user_gif(
-        user_id: int,
         gif_ids: list[int] = Query(),
+        user_id: int = Depends(get_user_id_from_jwt),
         user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
     """
@@ -127,5 +126,6 @@ async def delete_user_gif(
     **Returns:** Количество удаленных GIF
     """
     return await user_library_service.unlink_user_from_gif(
-        gif_ids=gif_ids,
+        user_id=user_id,
+        gif_ids=gif_ids
     )

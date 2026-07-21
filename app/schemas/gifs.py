@@ -7,12 +7,10 @@ class GifBase(BaseModel):
     tags: set[str]
 
 class GifCreate(GifBase):
-    @classmethod
-    def as_form(cls, tags: set[str] = Form()):
-        return cls(tags=tags)
+    pass
     
 class GifUpdate(GifBase):
-    pass
+    id: int
 
 class GifOut(GifBase):
     id: int
