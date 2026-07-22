@@ -39,6 +39,6 @@ class TagRepository(_BaseCRUD[Tag]):
         :param tag: Строковое значение тега (должно быть уникальным).
         :return: Row с колонками модели `Tag` после вставки или при конфликте.
         """
-        return await super().create_one({
+        return await self.create_one({
             Tag.tag: tag
         })

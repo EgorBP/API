@@ -9,7 +9,7 @@ from app.core.exceptions import UserGifsNotFoundError, GifNotFoundError, UserTag
 from app.models import UserGifTag, Gif, Tag
 from app.schemas.common import CursorPaginatedResponse, CursorPaginationMeta
 from app.schemas.gif import GifOut
-from app.repositories import UserGifTagRepository, TagRepository, GifRepository, SearchRepository
+from app.repositories import UserGifTagRepository, TagRepository, GifRepository, SearchRepository, UserRepository
 from app.services.interface import StorageProvider
 from app.services.user import UserService
 from app.utils.redis import invalidate_many
@@ -31,6 +31,44 @@ class UserLibraryService:
         self._session = session
         self._redis = redis
         
+        self._base_cache_ttl = 300
+        
+    async def get_user_gifs_amount(
+            self,
+            user_id: int
+    ):
+        cache_path = f"{self._get_service_cache_prefix(user_id)}:gifs:amount"
+        gifs_amount = await self._redis.get(cache_path)
+        if gifs_amount:
+            logger.info(
+                "Get user gifs amount",
+                extra={
+                    "user_id": user_id,
+                    "source": "cache"
+                }
+            )
+            return gifs_amount
+        
+        user_repo = UserRepository(self._session)
+        gifs_amount = await user_repo.get_user_gifs_amount(user_id)
+        logger.info(
+            "Get user gifs amount",
+            extra={
+                "user_id": user_id,
+                "source": "database"
+            }
+        )
+        
+        await self._redis.set(cache_path, gifs_amount, ex=self._base_cache_ttl)
+        logger.debug(
+            f"Set user gifs amount in cache for {self._base_cache_ttl}",
+            extra={
+                "user_id": user_id,
+            }
+        )
+        
+        return gifs_amount
+
     async def get_user_gifs_with_tags(
             self,
             user_id: int,
@@ -98,7 +136,7 @@ class UserLibraryService:
         gif_ids_string = ",".join(normalized_gif_ids) if normalized_gif_ids else "all"
 
         cursor_string = str(cursor_id) if cursor_id is not None else "first_page"
-        cache_key = f"{self._get_current_service_cache_prefix(user_id)}:gif_ids:{gif_ids_string}:tags:{tags_string}:cursor:{cursor_string}:limit:{limit}"
+        cache_key = f"{self._get_service_cache_prefix(user_id)}:gif_ids:{gif_ids_string}:tags:{tags_string}:cursor:{cursor_string}:limit:{limit}"
     
         cached_data = await self._redis.get(cache_key)
         if cached_data:
@@ -147,10 +185,10 @@ class UserLibraryService:
             )
         )
         
-        await self._redis.set(cache_key, final_data.model_dump_json(), ex=300)
+        await self._redis.set(cache_key, final_data.model_dump_json(), ex=self._base_cache_ttl)
         
         logger.info(
-            "Set new cache for 300s",
+            f"Set new cache for {self._base_cache_ttl}s",
             extra={
                 "user_id": user_id,
             }
@@ -176,7 +214,7 @@ class UserLibraryService:
         """
         user_gif_tag_repository = UserGifTagRepository(self._session)
 
-        cache_key = f"{self._get_current_service_cache_prefix(user_id)}:all_user_tags"
+        cache_key = f"{self._get_service_cache_prefix(user_id)}:all_user_tags"
         
         cached_data = await self._redis.get(cache_key)
         if cached_data:
@@ -212,10 +250,10 @@ class UserLibraryService:
         
         tags = list(tags)
     
-        await self._redis.set(cache_key, json.dumps(tags), ex=300)
+        await self._redis.set(cache_key, json.dumps(tags), ex=self._base_cache_ttl)
     
         logger.info(
-            "Set new cache for 300s",
+            f"Set new cache for {self._base_cache_ttl}s",
             extra={
                 "user_id": user_id,
             }
@@ -414,9 +452,9 @@ class UserLibraryService:
             self,
             user_id: int
     ):
-        objects_count = invalidate_many(
+        objects_count = await invalidate_many(
             redis=self._redis,
-            match=f"{self._get_current_service_cache_prefix(user_id)}:*"
+            match=f"{self._get_service_cache_prefix(user_id)}:*"
         )
         
         logger.info(
@@ -473,7 +511,7 @@ class UserLibraryService:
         )
 
     @staticmethod
-    def _get_current_service_cache_prefix(
+    def _get_service_cache_prefix(
             user_id: int
     ) -> str:
-        return f"{UserService.get_current_user_cache_prefix(user_id)}:library"
+        return f"{UserService.get_user_cache_prefix(user_id)}:library"

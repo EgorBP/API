@@ -1,10 +1,12 @@
 from typing import Final
 
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories import _BaseCRUD
-from app.models import User
+from app.models import User, UserGifTag, Gif
 
 
+# TODO
 class UserRepository(_BaseCRUD[User]):
     """
     CRUD для модели User.
@@ -40,6 +42,18 @@ class UserRepository(_BaseCRUD[User]):
         :param tg_id: Telegram ID пользователя.
         :return: Row с колонками модели `User` после вставки или при конфликте.
         """
-        return await super().create_one({
+        return await self.create_one({
             User.tg_id: tg_id
         })
+    
+    async def get_user_gifs_amount(
+            self,
+            user_id: int
+    ) -> int:
+        stmt = (
+            select(func.count(UserGifTag.gif_id))
+            .select_from(UserGifTag)
+            .where(UserGifTag.user_id == user_id)
+        )
+        
+        return await self._session.scalar(stmt) or 0

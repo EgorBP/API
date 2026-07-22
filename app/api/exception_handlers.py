@@ -171,10 +171,9 @@ class AppExceptionHandlers:
             exc: UserGifsNotFoundError
     ) -> JSONResponse:
         self.logger.info(
-            "User GIF's not found on %s %s: %s",
+            "User GIF's not found on %s %s",
             request.method,
             request.url,
-            exc,
             extra={
                 "source": exc.source,
                 "user_id": exc.user_id,
@@ -193,10 +192,9 @@ class AppExceptionHandlers:
             exc: GifNotFoundError
     ):
         self.logger.warning(
-            "Gif not found on %s %s: %s",
+            "Gif not found on %s %s",
             request.method,
             request.url,
-            exc,
             extra={
                 "gif_id": exc.gif_id,
                 "user_id": exc.user_id
@@ -217,10 +215,9 @@ class AppExceptionHandlers:
             exc: UserTagsNotFoundError
     ):
         self.logger.info(
-            "User tags not found %s %s: %s",
+            "User tags not found %s %s",
             request.method,
             request.url,
-            exc,
             extra={
                 "user_id": exc.user_id
             }
@@ -239,7 +236,7 @@ class AppExceptionHandlers:
             exc: InvalidCredentialsError
     ):
         self.logger.warning(
-            "Invalid credentials %s %s: %s",
+            "Invalid credentials %s %s",
             request.method,
             request.url,
             exc,

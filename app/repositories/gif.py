@@ -41,7 +41,7 @@ class GifRepository(_BaseCRUD[Gif]):
         :param tg_gif_id: Строковый идентификатор GIF из Telegram, должен быть уникальным.
         :return: Row с колонками модели `Gif` после выполнения операции.
         """
-        return await super().create_one({
+        return await self.create_one({
             Gif.file_path: file_path,
             Gif.file_hash: file_hash
         })
