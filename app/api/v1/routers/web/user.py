@@ -1,33 +1,46 @@
-from fastapi import APIRouter, Depends, Query, Form, UploadFile
-from starlette import status
+from fastapi import APIRouter, Depends, Query, UploadFile, Form, status
 
-from app.api.dependencies.services import get_user_library_service
-from app.api.dependencies.users import get_user_id_or_create_by_tg_user_id
+from app.api.dependencies.auth import get_user_id_from_jwt
+from app.api.dependencies.service import get_user_library_service, get_user_service
 from app.api.dependencies.validation import validate_gif_file
 from app.schemas.common import CursorPaginatedResponse
-from app.schemas.gifs import GifOut
+from app.schemas.gif import GifOut
+from app.schemas.user import UserOut
 from app.services import UserLibraryService
+from app.services.user import UserService
 
 router = APIRouter()
 
 
 @router.get(
-    '/{tg_user_id}/gifs',
+    '',
+    response_model=UserOut
+)
+async def get_user_info(
+        user_id: int = Depends(get_user_id_from_jwt),
+        user_service: UserService = Depends(get_user_service)
+):
+    return await user_service.get_user_info(
+        user_id=user_id
+    )
+
+
+@router.get(
+    '/gifs',
     response_model=CursorPaginatedResponse[GifOut, int]
 )
-async def get_user_gifs(
-        tg_user_id: int,
+async def get_user_gifs_by_id(
         gif_ids: list[int] | None = Query(None),
         tags: set[str] | None = Query(None),
         cursor: int | None = Query(None),
         limit: int = Query(default=20, ge=1, le=100),
-        user_id: int = Depends(get_user_id_or_create_by_tg_user_id),
+        user_id: int = Depends(get_user_id_from_jwt),
         user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
     """
     Получить GIF пользователя по его Telegram ID и идентификатору GIF.
 
-    - **tg_user_id**: Telegram ID пользователя
+    - **user_id**: ID пользователя
     - **gif_id**: ID GIF
 
     **Returns:**
@@ -44,19 +57,19 @@ async def get_user_gifs(
         limit=limit
     )
 
+
 @router.get(
-    '/{tg_user_id}/tags/all',
+    '/tags/all', 
     response_model=list[str]
 )
 async def get_user_tags(
-        tg_user_id: int,
-        user_id: int = Depends(get_user_id_or_create_by_tg_user_id),
+        user_id: int = Depends(get_user_id_from_jwt),
         user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
     """
     Получение всех тегов пользователя по его Telegram ID.
 
-    - **tg_user_id**: Telegram ID пользователя
+    - **user_id**: ID пользователя
     - **db**: Подключение к базе данных через Depends
 
     **Возвращает**:
@@ -65,16 +78,14 @@ async def get_user_tags(
     return await user_library_service.get_all_user_tags(user_id=user_id)
 
 
-# TODO: Обновить схемы
 @router.post(
-    '/{tg_user_id}/gifs/new',
+    '/gifs/new',
     response_model=GifOut
 )
 async def upload_new_gif(
-        tg_user_id: int,
         file: UploadFile = Depends(validate_gif_file),
         tags: set[str] = Form(),
-        user_id: int = Depends(get_user_id_or_create_by_tg_user_id),
+        user_id: int = Depends(get_user_id_from_jwt),
         user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
     return await user_library_service.add_new_user_gif(
@@ -85,14 +96,13 @@ async def upload_new_gif(
 
 
 @router.put(
-    '/{tg_user_id}/gifs/{gif_id}/tags',
+    '/gifs/{gif_id}/tags', 
     status_code=status.HTTP_204_NO_CONTENT
 )
 async def update_gif_tags(
-        tg_user_id: int,
         gif_id: int,
         tags: set[str],
-        user_id: int = Depends(get_user_id_or_create_by_tg_user_id),
+        user_id: int = Depends(get_user_id_from_jwt),
         user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
     """
@@ -109,22 +119,22 @@ async def update_gif_tags(
         gif_id=gif_id,
         tags=tags
     )
+    return
 
 
 @router.delete(
-    '/{tg_user_id}/gifs', 
+    '/gifs', 
     response_model=int
 )
 async def delete_user_gif(
-        tg_user_id: int,
         gif_ids: list[int] = Query(),
-        user_id: int = Depends(get_user_id_or_create_by_tg_user_id),
+        user_id: int = Depends(get_user_id_from_jwt),
         user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
     """
     Отвязывает GIF от пользователя, но не удаляет саму GIF из базы и хранилища.
 
-    - **tg_user_id**: Telegram ID пользователя
+    - **user_id**: ID пользователя
     - **gif_ids**: Идентификаторы GIF
 
     **Returns:** Количество удаленных GIF
@@ -132,4 +142,17 @@ async def delete_user_gif(
     return await user_library_service.unlink_user_from_gif(
         user_id=user_id,
         gif_ids=gif_ids
+    )
+
+
+@router.delete(
+    '',
+    status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_user(
+        user_id: int = Depends(get_user_id_from_jwt),
+        user_service: UserService = Depends(get_user_service)
+):
+    return await user_service.delete_user(
+        user_id=user_id
     )

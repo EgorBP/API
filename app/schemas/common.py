@@ -1,7 +1,5 @@
 from pydantic import BaseModel
-from typing import Generic, TypeVar, Any
-from app.schemas.users import UserOut
-from app.schemas.gifs import GifOut
+from typing import Generic, TypeVar
 
 DataT = TypeVar("DataT")
 CursorT = TypeVar("CursorT")

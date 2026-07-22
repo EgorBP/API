@@ -5,7 +5,7 @@ from app.repositories import _BaseCRUD
 from app.models import User
 
 
-class UserRepository(_BaseCRUD):
+class UserRepository(_BaseCRUD[User]):
     """
     CRUD для модели User.
 

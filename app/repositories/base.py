@@ -3,6 +3,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, inspect, Row, Select, Update, Delete, Insert
 from app.utils import is_valid_column_for_model, get_orm_columns, validate_columns_for_model
+from app.models import Base
 from typing import Sequence, Any, overload, Literal
 from typing import TypeVar, Generic
 
@@ -64,54 +65,6 @@ class _BaseCRUD(Generic[T]):
         """
         self.async_session = session
         
-    # Реализация через один запрос к БД. Возможно будет грузить базу больше чем простая проверка на существование 
-    # async def create_one(
-    #         self,
-    #         values: dict[InstrumentedAttribute, Any],
-    # ) -> T:
-    #     """
-    #     Создаёт новую запись в таблице или возвращает существующую при конфликте.
-    # 
-    #     Метод выполняет вставку (INSERT) в таблицу, соответствующую текущей модели ORM.
-    #     В случае конфликта по переданным колонкам (ключи словаря `values`) выполняется
-    #     обновление первой найденной не autoincrement колонки таблицы на саму себя и возврат всех колонок модели.  
-    #     
-    #     :param values: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
-    #                    а value — значение для вставки.
-    #     :return: Строка результата (Row), содержащая значения всех колонок модели после операции. 
-    #     """
-    #     columns = get_orm_columns(self._model)
-    #     not_autoincrement_key_index = -1
-    #     for i, col in enumerate(inspect(self._model).columns):
-    #         if not col.autoincrement or bool(col.foreign_keys) or not col.primary_key and col.autoincrement == 'auto':
-    #             not_autoincrement_key_index = i
-    #             break
-    #             
-    #     unique_cols = []
-    #     for col in values.keys():
-    #         if col.unique or col.primary_key:
-    #             unique_cols.append(col)
-    # 
-    #     if not_autoincrement_key_index == -1:
-    #         raise ValueError(f"Таблица {self._model.__tablename__} не подходит для использования в этом методе. "
-    #                          "Воспользуйтесь другим способом создания.")
-    #     
-    #     validate_columns_for_model(values.keys(), self._model)
-    # 
-    #     insert_stmt = insert(self._model).values(values)
-    #     if unique_cols:
-    #         col_name = columns[not_autoincrement_key_index].name
-    #         stmt = insert_stmt.on_conflict_do_update(
-    #             index_elements=unique_cols,
-    #             set_={col_name: insert_stmt.excluded[col_name]},
-    #         ).returning(self._model)
-    #     else:
-    #         stmt = insert_stmt.returning(self._model)
-    #         
-    #     result = await self.async_session.execute(stmt)
-    # 
-    #     return result.scalar_one()
-
     async def create_one(
             self,
             value: dict[InstrumentedAttribute, Any],
@@ -355,7 +308,7 @@ class _BaseCRUD(Generic[T]):
             instance_id: int | None = None,
             *,
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
-    ) -> int:
+    ) -> list[T] | None:
         """
         Универсальный метод удаления записей.
     
@@ -368,20 +321,15 @@ class _BaseCRUD(Generic[T]):
         :return: Количество удалённых строк.
         """
         if instance_id is not None:
-            stmt = delete(self._model).where(inspect(self._model).primary_key[0] == instance_id)
-            result = await self.async_session.execute(stmt)
-            # noinspection PyTypeChecker
-            return result.rowcount
-    
-        if not filters:
+            stmt = delete(self._model).where(inspect(self._model).primary_key[0] == instance_id).returning(self._model)
+        elif filters is not None:
+            stmt = delete(self._model)
+            stmt = self._add_filters_to_stmt(stmt, filters)
+        else:
             raise ValueError("Нужно указать либо instance_id, либо фильтры для удаления.")
-
-        stmt = delete(self._model)
-        stmt = self._add_filters_to_stmt(stmt, filters)
         
         result = await self.async_session.execute(stmt)
-        # noinspection PyTypeChecker
-        return result.rowcount
+        return list(result.scalars().all())
 
     def _add_filters_to_stmt[T_stmt: Select | Update | Delete | Insert](
             self,

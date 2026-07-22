@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from app.core.exceptions import TgUserNotFoundError, UserGifsNotFoundError, GifNotFoundError, UserTagsNotFoundError, \
-    InvalidCredentialsError
+    InvalidCredentialsError, UserNotFoundError
 
 
 class AppExceptionHandlers:
@@ -34,13 +34,35 @@ class AppExceptionHandlers:
             UserGifsNotFoundError: self._handle_gifs_not_found_error,
             GifNotFoundError: self._handle_gif_not_found_error,
             UserTagsNotFoundError: self._handle_user_tags_not_found_error,
-            InvalidCredentialsError: self._handle_invalid_credentials_error
+            InvalidCredentialsError: self._handle_invalid_credentials_error,
+            UserNotFoundError: self._handle_user_not_found_error,
         }
         
         for error, handler in to_register.items():
             app.add_exception_handler(error, handler)
+    
+    async def _handle_user_not_found_error(
+            self,
+            request: Request,
+            exc: UserNotFoundError
+    ):
+        self.logger.warning(
+            "User not found on %s %s: %s",
+            request.method,
+            request.url.path,
+            exc,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"detail": str(exc)},
+        )
 
-    async def _handle_value_error(self, request: Request, exc: ValueError) -> JSONResponse:
+        
+    async def _handle_value_error(
+            self, 
+            request: Request, 
+            exc: ValueError
+    ) -> JSONResponse:
         self.logger.warning(
             "ValueError on %s %s: %s",
             request.method,
@@ -129,9 +151,10 @@ class AppExceptionHandlers:
             exc: TgUserNotFoundError
     ) -> JSONResponse:
         self.logger.warning(
-            "User not found on %s %s",
+            "User not found on %s %s: %s",
             request.method,
             request.url,
+            exc,
             extra={
                 "tg_user_id": exc.tg_user_id
             }
@@ -148,9 +171,10 @@ class AppExceptionHandlers:
             exc: UserGifsNotFoundError
     ) -> JSONResponse:
         self.logger.info(
-            "User GIF's not found on %s %s",
+            "User GIF's not found on %s %s: %s",
             request.method,
             request.url,
+            exc,
             extra={
                 "source": exc.source,
                 "user_id": exc.user_id,
@@ -169,9 +193,10 @@ class AppExceptionHandlers:
             exc: GifNotFoundError
     ):
         self.logger.warning(
-            "Gif not found on %s %s",
+            "Gif not found on %s %s: %s",
             request.method,
             request.url,
+            exc,
             extra={
                 "gif_id": exc.gif_id,
                 "user_id": exc.user_id
@@ -192,9 +217,10 @@ class AppExceptionHandlers:
             exc: UserTagsNotFoundError
     ):
         self.logger.info(
-            "User tags not found %s %s",
+            "User tags not found %s %s: %s",
             request.method,
             request.url,
+            exc,
             extra={
                 "user_id": exc.user_id
             }
@@ -213,9 +239,10 @@ class AppExceptionHandlers:
             exc: InvalidCredentialsError
     ):
         self.logger.warning(
-            "Invalid credentials %s %s",
+            "Invalid credentials %s %s: %s",
             request.method,
             request.url,
+            exc,
         )
 
         return JSONResponse(
