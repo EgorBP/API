@@ -8,6 +8,16 @@ class TgUserNotFoundError(Exception):
         super().__init__(f"User with tg_id {tg_user_id} not found")
 
 
+class UserNotFoundError(Exception):
+    def __init__(
+            self,
+            user_id: int | None = None
+    ):
+        self.ser_id = user_id
+
+        super().__init__(f"User with id {user_id} not found")
+
+
 class UserGifsNotFoundError(Exception):
     def __init__(
             self,

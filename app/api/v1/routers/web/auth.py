@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies.services import get_auth_service
+from app.api.dependencies.service import get_auth_service
 from app.schemas.auth import TelegramAuthSchema, TokenResponseSchema
 from app.services.auth import AuthService
 

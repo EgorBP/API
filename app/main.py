@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api.routers import api_router
+from app.api import api_router
 from app.core.lifespan import lifespan
 from app.core.logging.config import setup_logging
 from app.api.exception_handlers import AppExceptionHandlers
@@ -17,3 +17,10 @@ AppExceptionHandlers().register(app)
 app.add_middleware(ASGIRequestLoggingMiddleware)
 
 app.include_router(api_router)
+
+# TODO:
+"""
+эндпоинт на популярные гифки
+популярные теги для гифки
+глобальный поиск
+"""

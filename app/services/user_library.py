@@ -8,12 +8,14 @@ import logging
 from app.core.exceptions import UserGifsNotFoundError, GifNotFoundError, UserTagsNotFoundError
 from app.models import UserGifTag, Gif, Tag
 from app.schemas.common import CursorPaginatedResponse, CursorPaginationMeta
-from app.schemas.gifs import GifOut
+from app.schemas.gif import GifOut
 from app.repositories import UserGifTagRepository, TagRepository, GifRepository, SearchRepository
-from app.services.interfaces import StorageProvider
+from app.services.interface import StorageProvider
+from app.services.user import UserService
+from app.utils.redis import invalidate_many
 from app.utils.storage import create_unique_filename_and_hash
 
-logger = logging.getLogger("app.service.user_library")
+logger = logging.getLogger(__name__)
 
 
 # TODO: update dockstring
@@ -96,7 +98,7 @@ class UserLibraryService:
         gif_ids_string = ",".join(normalized_gif_ids) if normalized_gif_ids else "all"
 
         cursor_string = str(cursor_id) if cursor_id is not None else "first_page"
-        cache_key = f"{self._get_user_cache_prefix(user_id)}:gif_ids:{gif_ids_string}:tags:{tags_string}:cursor:{cursor_string}:limit:{limit}"
+        cache_key = f"{self._get_current_service_cache_prefix(user_id)}:gif_ids:{gif_ids_string}:tags:{tags_string}:cursor:{cursor_string}:limit:{limit}"
     
         cached_data = await self._redis.get(cache_key)
         if cached_data:
@@ -174,7 +176,7 @@ class UserLibraryService:
         """
         user_gif_tag_repository = UserGifTagRepository(self._session)
 
-        cache_key = f"user_id:{user_id}:all_user_tags"
+        cache_key = f"{self._get_current_service_cache_prefix(user_id)}:all_user_tags"
         
         cached_data = await self._redis.get(cache_key)
         if cached_data:
@@ -274,7 +276,7 @@ class UserLibraryService:
                 }
             )
 
-            await self._invalidate_all_user_cache(user_id)
+            await self._invalidate_current_service_cache(user_id)
             
             return GifOut(
                 id=gif_id,
@@ -339,7 +341,7 @@ class UserLibraryService:
                 )
 
                 # Инвалидируем кэш
-                await self._invalidate_all_user_cache(user_id)
+                await self._invalidate_current_service_cache(user_id)
 
             except Exception:
                 await self._session.rollback()
@@ -375,23 +377,28 @@ class UserLibraryService:
         user_gif_tag_repository = UserGifTagRepository(self._session)
         
         try:
-            result = await user_gif_tag_repository.delete_many(
+            deleted = await user_gif_tag_repository.delete_many(
                 filters={
                     UserGifTag.user_id: user_id,
                     UserGifTag.gif_id: gif_ids,
                 }
             )
+            if deleted is None:
+                raise UserGifsNotFoundError(
+                    user_id=user_id
+                )
+            
             await self._session.commit()
             logger.info(
-                f"{result} user GIFs deleted",
+                f"{len(deleted)} user GIFs deleted",
                 extra={
                     "user_id": user_id,
                 }
             )
             
-            await self._invalidate_all_user_cache(user_id)  
+            await self._invalidate_current_service_cache(user_id)  
                 
-            return result
+            return len(deleted)
         
         except Exception:
             await self._session.rollback()
@@ -403,35 +410,24 @@ class UserLibraryService:
             )
             raise
 
-    async def _invalidate_all_user_cache(
+    async def _invalidate_current_service_cache(
             self,
             user_id: int
     ):
-        keys = []
-        objects_count = 0
-        batch_size = 500
-
-        async for key in self._redis.scan_iter(f"{self._get_user_cache_prefix(user_id)}:*"):
-            keys.append(key)
-
-            if len(keys) >= batch_size:
-                await self._redis.unlink(*keys)
-                objects_count += len(keys)
-                keys = []
-
-        if keys:
-            objects_count += len(keys)
-            await self._redis.unlink(*keys)
-
+        objects_count = invalidate_many(
+            redis=self._redis,
+            match=f"{self._get_current_service_cache_prefix(user_id)}:*"
+        )
+        
         logger.info(
-            f"User cache ({objects_count} elements) invalidated",
+            f"User library cache ({objects_count} elements) invalidated",
             extra={
                 "user_id": user_id,
             }
         )
 
+    @staticmethod
     async def _set_new_user_tags_on_gif_internal(
-            self,
             user_id: int,
             gif_id: int,
             tags: set[str],
@@ -476,8 +472,8 @@ class UserLibraryService:
             ]
         )
 
-    def _get_user_cache_prefix(
-            self, 
+    @staticmethod
+    def _get_current_service_cache_prefix(
             user_id: int
     ) -> str:
-        return f"user_id:{user_id}"
+        return f"{UserService.get_current_user_cache_prefix(user_id)}:library"
