@@ -26,6 +26,18 @@ async def get_user_info(
 
 
 @router.get(
+    '/gifs/amount',
+    response_model=int
+)
+async def get_user_gifs_amount(
+        user_id: int = Depends(get_user_id_from_jwt),
+        user_library_service: UserLibraryService = Depends(get_user_library_service)
+):
+    return await user_library_service.get_user_gifs_amount(
+        user_id=user_id
+    )
+
+@router.get(
     '/gifs',
     response_model=CursorPaginatedResponse[GifOut, int]
 )

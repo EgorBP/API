@@ -7,7 +7,7 @@ from app.models import Base
 from typing import Sequence, Any, overload, Literal
 from typing import TypeVar, Generic
 
-T = TypeVar("T")
+T = TypeVar("T", bound=Base)
 
 
 # TODO: update dockstring
@@ -63,13 +63,29 @@ class _BaseCRUD(Generic[T]):
         """
         :param session: Объект асинхронной сессии SQLAlchemy.
         """
-        self.async_session = session
-        
+        self._session = session
+    
+    @overload
+    async def create_one(
+            self,
+            value: dict[InstrumentedAttribute, Any],
+            ignore_conflicts: Literal[False] = False
+    ) -> T:
+        ...
+
+    @overload
+    async def create_one(
+            self,
+            value: dict[InstrumentedAttribute, Any],
+            ignore_conflicts: Literal[True]
+    ) -> T | None:
+        ...
+
     async def create_one(
             self,
             value: dict[InstrumentedAttribute, Any],
             ignore_conflicts: bool = False,
-    ) -> T:
+    ) -> T | None:
         """
 
         :param value: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
@@ -88,7 +104,7 @@ class _BaseCRUD(Generic[T]):
     
         stmt = stmt.returning(self._model)
     
-        result = await self.async_session.execute(stmt)
+        result = await self._session.execute(stmt)
     
         return result.scalar_one_or_none()
 
@@ -132,7 +148,7 @@ class _BaseCRUD(Generic[T]):
 
         stmt = stmt.returning(self._model)
         
-        result = await self.async_session.execute(stmt)
+        result = await self._session.execute(stmt)
 
         return list(result.scalars().all())
 
@@ -174,12 +190,12 @@ class _BaseCRUD(Generic[T]):
             filters=filters
         )
     
-        result = await self.async_session.execute(stmt)
+        result = await self._session.execute(stmt)
         
         if scalars:
             result = result.scalars()
             
-        return result.all()
+        return list(result.all())
     
     @overload
     async def get_one(
@@ -219,7 +235,7 @@ class _BaseCRUD(Generic[T]):
             filters=filters
         ).limit(1)
 
-        result = await self.async_session.execute(stmt)
+        result = await self._session.execute(stmt)
 
         if scalar:
             return result.scalar()
@@ -241,7 +257,7 @@ class _BaseCRUD(Generic[T]):
             filters=filters
         )
 
-        result = await self.async_session.execute(stmt)
+        result = await self._session.execute(stmt)
         
         return list(result.scalars().all())
     
@@ -262,7 +278,7 @@ class _BaseCRUD(Generic[T]):
             filters=filters
         ).limit(1)
 
-        result = await self.async_session.execute(stmt)
+        result = await self._session.execute(stmt)
 
         return result.scalar_one_or_none()
 
@@ -289,7 +305,7 @@ class _BaseCRUD(Generic[T]):
         
         if instance_id is not None:
             stmt = update(self._model).where(inspect(self._model).primary_key[0] == instance_id).values(values).returning(self._model)
-            result = await self.async_session.execute(stmt)
+            result = await self._session.execute(stmt)
             return result.scalar_one()
 
         if not filters:
@@ -299,7 +315,7 @@ class _BaseCRUD(Generic[T]):
             
         stmt = self._add_filters_to_stmt(stmt, filters)
 
-        result = await self.async_session.execute(stmt)
+        result = await self._session.execute(stmt)
         
         return result.scalar_one()
 
@@ -321,14 +337,16 @@ class _BaseCRUD(Generic[T]):
         :return: Количество удалённых строк.
         """
         if instance_id is not None:
-            stmt = delete(self._model).where(inspect(self._model).primary_key[0] == instance_id).returning(self._model)
+            stmt = delete(self._model).where(inspect(self._model).primary_key[0] == instance_id)
         elif filters is not None:
             stmt = delete(self._model)
             stmt = self._add_filters_to_stmt(stmt, filters)
         else:
             raise ValueError("Нужно указать либо instance_id, либо фильтры для удаления.")
         
-        result = await self.async_session.execute(stmt)
+        stmt = stmt.returning(self._model)
+        
+        result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
     def _add_filters_to_stmt[T_stmt: Select | Update | Delete | Insert](

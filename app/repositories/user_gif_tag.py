@@ -42,7 +42,7 @@ class UserGifTagRepository(_BaseCRUD[UserGifTag]):
 
         :return: Row с колонками модели UserGifTag.
         """
-        return await super().create_one({
+        return await self.create_one({
             UserGifTag.user_id: user_id,
             UserGifTag.gif_id: gif_id,
             UserGifTag.tag_id: tag_id,
@@ -116,7 +116,7 @@ class UserGifTagRepository(_BaseCRUD[UserGifTag]):
 
                 stmt = stmt.where(column.in_(values))
     
-        result = await self.async_session.execute(stmt)
+        result = await self._session.execute(stmt)
         if scalars:
             result = result.scalars()
         return result.all()

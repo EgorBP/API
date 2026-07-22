@@ -26,8 +26,10 @@ class UserService:
         self._banned_status_ttl = 604800
         self._not_found_status_ttl = 60
         
+        self._info_cache_ttl = 604800
+        
     @classmethod
-    def get_current_user_cache_prefix(
+    def get_user_cache_prefix(
             cls,
             user_id: int
     ) -> str:
@@ -67,12 +69,12 @@ class UserService:
             self,
             user_id: int
     ) -> UserOut:
-        cache_path = f"{self.get_current_user_cache_prefix(user_id)}:info"
+        cache_path = f"{self.get_user_cache_prefix(user_id)}:info"
         
         user_info = await self._redis.get(cache_path)
         
         if user_info:
-            logger.debug(
+            logger.info(
                 "Get user info",
                 extra={
                     "user_id": user_id,
@@ -87,7 +89,7 @@ class UserService:
             filters={User.id: user_id}
         )
         user_info = UserOut.model_validate(user_info)
-        logger.debug(
+        logger.info(
             "Get user info",
             extra={
                 "user_id": user_id,
@@ -95,9 +97,9 @@ class UserService:
             }
         )
         
-        await self._redis.set(cache_path, user_info.model_dump_json())
+        await self._redis.set(cache_path, user_info.model_dump_json(), ex=self._info_cache_ttl)
         logger.debug(
-            "Set user info in cache",
+            f"Set user info in cache for {self._info_cache_ttl}s",
             extra={
                 "user_id": user_id,
             }
@@ -235,12 +237,12 @@ class UserService:
     ) -> None:
         objects_count = await invalidate_many(
             redis=self._redis,
-            match=self.get_current_user_cache_prefix(user_id)
+            match=f"{self.get_user_cache_prefix(user_id)}*"
         )
         await self._redis.delete(self._get_user_alias_cache_path(tg_user_id))
         
         logger.debug(
-            f"All user cache  ({objects_count} elements) invalidated",
+            f"All user cache ({objects_count} elements) invalidated",
             extra={
                 "user_id": user_id
             }
@@ -250,7 +252,7 @@ class UserService:
             self,
             user_id: int
     ) -> str:
-        return f"{self.get_current_user_cache_prefix(user_id)}:status"
+        return f"{self.get_user_cache_prefix(user_id)}:status"
     
     async def _update_user_status_in_cache(
             self,
