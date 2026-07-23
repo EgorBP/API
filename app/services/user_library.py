@@ -75,7 +75,7 @@ class UserLibraryService:
             limit: int,
             gif_ids: Sequence[int] | int | None  = None,
             tags: set[str] | str | None = None,
-            cursor_id: int | None = None
+            cursor: int | None = None
     ) -> CursorPaginatedResponse:
         """
         Возвращает гифки пользователя с их тегами в виде вложенного словаря.
@@ -119,7 +119,7 @@ class UserLibraryService:
         :return: Словарь с данными пользователя, гифок и тегов в формате, описанном выше,
                  или None, если пользователь не найден.
         """
-        search_repository = SearchRepository(self._session)
+        gif_repo = GifRepository(self._session)
         
         if isinstance(gif_ids, int):
             gif_ids = (gif_ids,)
@@ -149,11 +149,11 @@ class UserLibraryService:
             )
             return CursorPaginatedResponse.model_validate_json(cached_data)
         
-        rows = await search_repository.search_user_gifs_with_tags(
+        rows = await gif_repo.search_user_gifs_with_tags(
             user_id=user_id,
             gif_ids=gif_ids,
             tags=tags,
-            cursor_id=cursor_id,
+            cursor=cursor,
             limit=limit + 1
         )
         
@@ -212,7 +212,7 @@ class UserLibraryService:
     
         :return: Множество уникальных тегов (`set[str]`) или None, если пользователь не найден.
         """
-        user_gif_tag_repository = UserGifTagRepository(self._session)
+        tag_repo = TagRepository(self._session)
 
         cache_key = f"{self._get_service_cache_prefix(user_id)}:all_user_tags"
         
@@ -227,17 +227,8 @@ class UserLibraryService:
             )
             return json.loads(cached_data)
         
-        tags = await user_gif_tag_repository.get_many_with_join(
-            columns=[
-                Tag.tag
-            ],
-            join_models=[
-                Tag
-            ],
-            filters={UserGifTag.user_id: user_id},
-            scalars=True
-        )
-    
+        tags = await tag_repo.get_unique_user_tags(user_id)
+        
         if not tags:
             logger.info(
                 "Tags not found",
@@ -248,9 +239,7 @@ class UserLibraryService:
             )
             raise UserTagsNotFoundError(user_id)
         
-        tags = list(tags)
-    
-        await self._redis.set(cache_key, json.dumps(tags), ex=self._base_cache_ttl)
+        await self._redis.set(cache_key, json.dumps(list(tags)), ex=self._base_cache_ttl)
     
         logger.info(
             f"Set new cache for {self._base_cache_ttl}s",
@@ -265,8 +254,8 @@ class UserLibraryService:
                 "user_id": user_id,
             }
         )
-    
-        return set(tags)
+        
+        return tags
     
     async def add_new_user_gif(
             self,

@@ -1,5 +1,6 @@
+from enum import Enum
 from sqlalchemy import String, Integer, BigInteger, ForeignKey
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -20,6 +21,12 @@ class User(Base):
         index=True,     # If delete it alembic can create useless migration. But now in database exist only one index 
         nullable=False
     )
+
+
+class UserStatus(str, Enum):
+    ACTIVE = "active"
+    BANNED = "banned"
+    DELETED_OR_NOT_FOUND = "deleted_or_not_found"
 
 
 class Gif(Base):
@@ -75,3 +82,7 @@ class UserGifTag(Base):
         ForeignKey("tags.id", ondelete="CASCADE"),
         primary_key=True
     )
+
+    user: Mapped["User"] = relationship()
+    gif: Mapped["Gif"] = relationship()
+    tag: Mapped["Tag"] = relationship()
