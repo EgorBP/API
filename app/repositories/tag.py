@@ -1,6 +1,8 @@
 from typing import Final
+
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import Tag
+from app.models import Tag, UserGifTag
 from app.repositories import _BaseCRUD
 
 
@@ -42,3 +44,37 @@ class TagRepository(_BaseCRUD[Tag]):
         return await self.create_one({
             Tag.tag: tag
         })
+
+    async def get_unique_user_tags(
+            self,
+            user_id: int,
+    ) -> set[str]:
+        stmt = (
+            select(Tag.tag)
+            .distinct()
+            .select_from(UserGifTag)
+            .join(Tag, UserGifTag.tag_id == Tag.id)
+            .where(UserGifTag.user_id == user_id)
+        )
+
+        return set(await self._session.scalars(stmt))
+
+    async def get_popular_tags(
+            self,
+            limit: int
+    ) -> set[str]:
+        stmt = (
+            select(
+                Tag.tag
+            )
+            .select_from(Tag)
+            .outerjoin(UserGifTag, UserGifTag.tag_id == Tag.id)
+            .group_by(Tag.tag)
+            .order_by(
+                func.count(UserGifTag.user_id).desc()
+            )
+            .limit(limit)
+        )
+
+        result = await self._session.execute(stmt)
+        return set(result.scalars().all())

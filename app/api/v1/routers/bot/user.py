@@ -11,6 +11,20 @@ router = APIRouter()
 
 
 @router.get(
+    '/{tg_user_id}/gifs/amount',
+    response_model=int
+)
+async def get_user_gifs_amount(
+        tg_user_id: int,
+        user_id: int = Depends(get_or_create_user_id_by_tg_user_id),
+        user_library_service: UserLibraryService = Depends(get_user_library_service)
+):
+    return await user_library_service.get_user_gifs_amount(
+        user_id=user_id
+    )
+
+
+@router.get(
     '/{tg_user_id}/gifs',
     response_model=CursorPaginatedResponse[GifOut, int]
 )

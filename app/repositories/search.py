@@ -5,6 +5,8 @@ from sqlalchemy import select, func
 from app.models import User, UserGifTag, Gif, Tag
 import logging
 
+from app.schemas.common import SortOption
+
 logger = logging.getLogger("app.repositories")
 
 
@@ -17,73 +19,46 @@ class SearchRepository:
         """
         :param session: Объект асинхронной сессии SQLAlchemy.
         """
-        self.async_session = session
+        self._session = session
         
-    async def search_user_gifs_with_tags(
+    async def search_gifs_by_tags(
             self,
-            user_id: int | None = None,
-            gif_ids: Sequence[int] | None = None,
             tags: set[str] | None = None,
-            cursor_id: int | None = None,
+            sorting: SortOption = SortOption.NEW,
+            cursor: int | None = None,
             limit: int | None = None
     ) -> list[Row[tuple]]:
-        """
-        Ищет GIF пользователя с возможностью фильтрации по тегам и идентификаторам.
-
-        Метод возвращает только те GIF, которые принадлежат указанному пользователю.
-        Если переданы теги, будут найдены только GIF, содержащие **все** указанные теги.
-
-        :param user_id: Внутренний идентификатор пользователя. Если указан,
-            поиск выполняется по нему. Должен быть передан либо `user_id`,
-            либо `tg_user_id`.
-
-        :param gif_ids: ID GIF или последовательность ID GIF,
-            по которым необходимо ограничить поиск.
-
-        :param tags: Тег или набор тегов для фильтрации. Возвращаются только GIF,
-            содержащие все указанные теги.
-
-        :return: Список найденных GIF.
-        """
-        
-        filter_query = (
-            select(UserGifTag.gif_id)
+        gif_id = 1
+        popular_tags_query = (
+            select(Tag.tag)
             .select_from(UserGifTag)
             .join(Tag, UserGifTag.tag_id == Tag.id)
-            .where(Tag.tag.in_(tags))
-            .group_by(UserGifTag.gif_id)
-            .having(func.count(distinct(Tag.tag)) == len(tags))
-            .subquery()
+            .where(UserGifTag.gif_id == gif_id)
+            .group_by(Tag.tag)
+            .order_by(func.count(UserGifTag.user_id).desc())
+            .limit(5)
         )
-        
         stmt = (
             select(
                 Gif.id,
                 Gif.file_path,
-                func.array_agg(Tag.tag).label("tags")
             )
             .select_from(UserGifTag)
             .join(Gif, UserGifTag.gif_id == Gif.id)
-            .join(Tag, UserGifTag.tag_id == Tag.id)
-            .order_by(Gif.id.desc())
-            .where(UserGifTag.user_id == user_id)
-            .group_by(
-                Gif.id,
-                Gif.file_path
-            )
         )
         
-        if gif_ids:
-            stmt = stmt.where(Gif.id.in_(gif_ids))
-               
-        if tags:
-            stmt = stmt.join(filter_query, UserGifTag.gif_id == filter_query.c.gif_id)
-        
-        if cursor_id:
-            stmt = stmt.where(Gif.id < cursor_id)
-        
+        if sorting == sorting.NEW:
+            stmt = stmt.order_by(Gif.id.desc())
+        elif sorting == sorting.POPULAR:
+            stmt = stmt.order_by(func.count(Gif.id).asc())
+        else:
+            stmt = stmt.order_by(Gif.id.asc())
+
+        if cursor:
+            stmt = stmt.where(Gif.id < cursor)
+
         if limit:
             stmt = stmt.limit(limit)
-        
-        result = await self.async_session.execute(stmt)
-        return result.all()
+
+        result = await self._session.execute(stmt)
+        return list(result.all())

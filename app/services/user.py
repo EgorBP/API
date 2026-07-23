@@ -3,9 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
 from app.core.exceptions import UserNotFoundError
-from app.models import User
+from app.models import User, UserStatus
 from app.repositories import UserRepository
-from app.schemas.user import UserOut, UserStatus
+from app.schemas.user import UserOut
 from app.utils.redis import invalidate_many
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class UserService:
     ) -> bool:
         user_status = await self._get_user_status_from_cache(user_id)
         
-        if user_status == UserStatus.active:
+        if user_status == UserStatus.ACTIVE:
             return True
         
         user_repository = UserRepository(self._session)
@@ -53,14 +53,14 @@ class UserService:
         if result:
             await self._update_user_status_in_cache(
                 user_id=user_id,
-                new_status=UserStatus.active,
+                new_status=UserStatus.ACTIVE,
                 ex=self._active_status_ttl
             )
             return True
         else:
             await self._update_user_status_in_cache(
                 user_id=user_id,
-                new_status=UserStatus.deleted_or_not_found,
+                new_status=UserStatus.DELETED_OR_NOT_FOUND,
                 ex=self._not_found_status_ttl
             )
             return False
@@ -147,7 +147,7 @@ class UserService:
             )
             await self._update_user_status_in_cache(
                 user_id=user_id,
-                new_status=UserStatus.active,
+                new_status=UserStatus.ACTIVE,
                 ex=self._active_status_ttl
             )
             
@@ -197,7 +197,7 @@ class UserService:
             if deleted is None:
                 await self._update_user_status_in_cache(
                     user_id=user_id,
-                    new_status=UserStatus.deleted_or_not_found,
+                    new_status=UserStatus.DELETED_OR_NOT_FOUND,
                     ex=self._not_found_status_ttl
                 )
                 raise UserNotFoundError(user_id)
@@ -216,7 +216,7 @@ class UserService:
             )
             await self._update_user_status_in_cache(
                 user_id=user_id,
-                new_status=UserStatus.deleted_or_not_found,
+                new_status=UserStatus.DELETED_OR_NOT_FOUND,
                 ex=self._not_found_status_ttl
             )
 

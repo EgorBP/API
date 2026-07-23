@@ -1,3 +1,4 @@
+from enum import Enum
 from pydantic import BaseModel
 from typing import Generic, TypeVar
 
@@ -14,3 +15,8 @@ class CursorPaginationMeta(BaseModel, Generic[CursorT]):
 class CursorPaginatedResponse(BaseModel, Generic[DataT, CursorT]):
     data: list[DataT]
     pagination: CursorPaginationMeta[CursorT] | None = None
+
+
+class SortOption(str, Enum):
+    NEW = "new"
+    OLD = "old"
