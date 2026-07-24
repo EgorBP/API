@@ -42,7 +42,7 @@ async def get_user_gifs_count(
     '/gifs',
     response_model=CursorPaginatedResponse[GifOut, int]
 )
-async def get_user_gifs_by_id(
+async def get_user_gifs(
         gif_ids: list[int] | None = Query(None),
         tags: set[str] | None = Query(None),
         cursor: int | None = Query(None),

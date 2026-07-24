@@ -321,28 +321,10 @@ class _BaseCRUD(Generic[T]):
 
     async def delete_many(
             self,
-            instance_id: int | None = None,
-            *,
-            filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
-    ) -> list[T] | None:
-        """
-        Универсальный метод удаления записей.
-    
-        Можно удалить запись по первому найденному первичному ключу (instance_id) или по фильтрам.
-        Приоритет имеет первичный ключ.
-    
-        :param instance_id: Первичный ключ записи для удаления.
-        :param filters: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
-                       а value — значение для удаления.
-        :return: Количество удалённых строк.
-        """
-        if instance_id is not None:
-            stmt = delete(self._model).where(inspect(self._model).primary_key[0] == instance_id)
-        elif filters is not None:
-            stmt = delete(self._model)
-            stmt = self._add_filters_to_stmt(stmt, filters)
-        else:
-            raise ValueError("Нужно указать либо instance_id, либо фильтры для удаления.")
+            filters: dict[InstrumentedAttribute, Sequence[Any] | Any]
+    ) -> list[T]:
+        stmt = delete(self._model)
+        stmt = self._add_filters_to_stmt(stmt, filters)
         
         stmt = stmt.returning(self._model)
         

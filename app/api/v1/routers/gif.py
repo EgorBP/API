@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, UploadFile, Form, status
+from fastapi import APIRouter, Depends, Query
 
 from app.api.dependencies.service import get_gif_service, get_tag_service
 from app.schemas.common import CursorPaginatedResponse, SortOrder
@@ -43,7 +43,7 @@ async def get_gifs(
     '/{gif_id}/popular/tags',
     response_model=RawTagsOut
 )
-async def get_popular_gifs(
+async def get_popular_tags_for_gif(
         gif_id: int,
         limit: int = Query(default=5, ge=1, le=10),
         tag_service: TagService = Depends(get_tag_service)

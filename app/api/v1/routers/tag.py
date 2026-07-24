@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, Query, UploadFile, Form, status
+from fastapi import APIRouter, Depends
 
-from app.api.dependencies.service import get_tag_service 
+from app.api.dependencies.service import get_tag_service
 from app.schemas.tag import PopularTagsOut
 from app.services.tag import TagService
 
