@@ -151,7 +151,7 @@ class _BaseCRUD(Generic[T]):
         result = await self._session.execute(stmt)
 
         return list(result.scalars().all())
-
+    
     @overload
     async def get_many(
             self,

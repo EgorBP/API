@@ -16,9 +16,16 @@ class TagOut(TagBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RawTagsOut(BaseModel):
+    tags: list[str]
+    count: int
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
 class PopularTagsOut(BaseModel):
-    tags: set[str]
-    amount: int
+    tags: list[str]
+    count: int
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(from_attributes=True)

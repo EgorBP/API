@@ -4,7 +4,7 @@ from sqlalchemy import select, func, distinct, Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories import _BaseCRUD
 from app.models import Gif, UserGifTag, Tag
-from app.schemas.common import SortOption
+from app.schemas.common import SortOrder
 
 
 # TODO: update dockstring
@@ -48,6 +48,28 @@ class GifRepository(_BaseCRUD[Gif]):
             Gif.file_path: file_path,
             Gif.file_hash: file_hash
         })
+
+    async def get_popular_gifs(
+            self,
+            limit: int
+    ) -> list[Row[tuple[int, str]]]:
+        stmt = (
+            select(
+                Gif.id,
+                Gif.file_path,
+            )
+            .select_from(Gif)
+            .outerjoin(UserGifTag, UserGifTag.gif_id == Gif.id)
+            .group_by(Gif.id, Gif.file_path)
+            .order_by(
+                func.count(UserGifTag.user_id).desc(),
+                Gif.id.desc()
+            )
+            .limit(limit)
+        )
+
+        result = await self._session.execute(stmt)
+        return list(result.all())
 
     async def search_user_gifs_with_tags(
             self,
@@ -97,17 +119,10 @@ class GifRepository(_BaseCRUD[Gif]):
             stmt = stmt.where(Gif.id.in_(gif_ids))
 
         if tags:
-            filter_query = (
-                select(UserGifTag.gif_id)
-                .select_from(UserGifTag)
-                .join(Tag, UserGifTag.tag_id == Tag.id)
-                .where(Tag.tag.in_(tags))
-                .group_by(UserGifTag.gif_id)
-                .having(func.count(distinct(Tag.tag)) == len(tags))
-                .subquery()
+            stmt = stmt.having(
+                func.count(distinct(Tag.tag))
+                .filter(Tag.tag.in_(tags)) == len(tags)
             )
-
-            stmt = stmt.join(filter_query, UserGifTag.gif_id == filter_query.c.gif_id)
 
         if cursor:
             stmt = stmt.where(Gif.id < cursor)
@@ -118,32 +133,10 @@ class GifRepository(_BaseCRUD[Gif]):
         result = await self._session.execute(stmt)
         return list(result.all())
     
-    async def get_popular_gifs(
-            self,
-            limit: int
-    ) -> list[Row[tuple[int, str]]]:
-        stmt = (
-            select(
-                Gif.id,
-                Gif.file_path,
-            )
-            .select_from(Gif)
-            .outerjoin(UserGifTag, UserGifTag.gif_id == Gif.id)
-            .group_by(Gif.id, Gif.file_path)
-            .order_by(
-                func.count(UserGifTag.user_id).desc(),
-                Gif.id.desc()
-            )
-            .limit(limit)
-        )
-        
-        result = await self._session.execute(stmt)
-        return list(result.all())
-
     async def search_gifs_by_tags(
             self,
             tags: set[str] | None = None,
-            sorting: SortOption = SortOption.NEW,
+            sorting: SortOrder = SortOrder.DESC,
             cursor: int | None = None,
             limit: int | None = None
     ) -> list[Row[tuple[int, str]]]:
@@ -153,34 +146,32 @@ class GifRepository(_BaseCRUD[Gif]):
                 Gif.file_path,
             )
             .select_from(Gif)
-            .outerjoin(UserGifTag, UserGifTag.gif_id == Gif.id)
         )
         
         if tags:
             stmt = (
-                stmt.join(Tag, UserGifTag.tag_id == Tag.id)
+                stmt
+                .join(UserGifTag, UserGifTag.gif_id == Gif.id)
+                .join(Tag, UserGifTag.tag_id == Tag.id)
                 .where(Tag.tag.in_(tags))
+                .group_by(Gif.id, Gif.file_path)
+                .having(func.count(distinct(Tag.id)) == len(tags))
             )
 
-        if sorting == SortOption.NEW:
+        if sorting == SortOrder.DESC:
             stmt = stmt.order_by(Gif.id.desc())
-        elif sorting == SortOption.POPULAR:
-            stmt = (
-                stmt.group_by(Gif.id)
-                .order_by(func.count(UserGifTag.user_id).desc())
-            )
         else:
             stmt = stmt.order_by(Gif.id.asc())
 
         if cursor:
-            if sorting == SortOption.OLD:
-                stmt = stmt.where(Gif.id > cursor)
-            else:
+            if sorting == SortOrder.DESC:
                 stmt = stmt.where(Gif.id < cursor)
+            else:
+                stmt = stmt.where(Gif.id > cursor)
             
         if limit:
             stmt = stmt.limit(limit)
 
         result = await self._session.execute(stmt)
         return list(result.all())
-
+    

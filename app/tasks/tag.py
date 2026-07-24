@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 async def recalculate_popular_tags_loop(
         redis: Redis,
-        amount: int,
+        limit: int,
         recalc_after: int
 ):
     while True:
@@ -19,11 +19,11 @@ async def recalculate_popular_tags_loop(
             async with AsyncSessionLocal() as session:
                 gif_repo = TagRepository(session)
 
-                popular_tags = await gif_repo.get_popular_tags(amount)
+                popular_tags = await gif_repo.get_popular_tags(limit)
 
                 popular_gifs_out = PopularTagsOut(
                     tags=popular_tags,
-                    amount=len(popular_tags)
+                    count=len(popular_tags)
                 )
 
                 await redis.set("popular:tags", popular_gifs_out.model_dump_json())

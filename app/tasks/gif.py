@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 async def recalculate_popular_gifs_loop(
         redis: Redis,
-        amount: int,
+        limit: int,
         recalc_after: int
 ):
     while True:
@@ -19,12 +19,12 @@ async def recalculate_popular_gifs_loop(
             async with AsyncSessionLocal() as session:
                 gif_repo = GifRepository(session)
                 
-                popular_gifs = await gif_repo.get_popular_gifs(amount)
+                popular_gifs = await gif_repo.get_popular_gifs(limit)
                 popular_gifs = [RawGifOut.model_validate(gif) for gif in popular_gifs]
                 
                 popular_gifs_out = PopularGifsOut(
                     gifs=popular_gifs, 
-                    amount=len(popular_gifs)
+                    count=len(popular_gifs)
                 )
 
                 await redis.set("popular:gifs", popular_gifs_out.model_dump_json())

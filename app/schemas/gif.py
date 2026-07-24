@@ -30,7 +30,7 @@ class RawGifOut(BaseModel):
 
 class PopularGifsOut(BaseModel):
     gifs: list[RawGifOut]
-    amount: int
+    count: int
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     model_config = ConfigDict(from_attributes=True)
