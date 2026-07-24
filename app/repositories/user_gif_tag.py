@@ -3,7 +3,7 @@ from app.repositories import _BaseCRUD
 from app.models import UserGifTag
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from typing import Sequence, Final, overload, Literal
-from sqlalchemy import select, Row
+from sqlalchemy import select, Row, delete
 from typing import TypeAlias, Any
 from app.models import User, Gif, Tag
 from app.utils import get_orm_columns
@@ -119,4 +119,17 @@ class UserGifTagRepository(_BaseCRUD[UserGifTag]):
         result = await self._session.execute(stmt)
         if scalars:
             result = result.scalars()
-        return result.all()
+        return list(result.all())
+
+    async def delete_except_tag_ids(
+            self,
+            user_id: int,
+            gif_id: int,
+            keep_tag_ids: set[int],
+    ) -> None:
+        stmt = delete(self._model).where(
+            UserGifTag.user_id == user_id,
+            UserGifTag.gif_id == gif_id,
+            UserGifTag.tag_id.not_in(keep_tag_ids),
+        )
+        await self._session.execute(stmt)

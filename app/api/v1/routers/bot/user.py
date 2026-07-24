@@ -5,21 +5,22 @@ from app.api.dependencies.user import get_or_create_user_id_by_tg_user_id
 from app.api.dependencies.validation import validate_gif_file
 from app.schemas.common import CursorPaginatedResponse
 from app.schemas.gif import GifOut
+from app.schemas.tag import RawTagsOut
 from app.services import UserLibraryService
 
 router = APIRouter()
 
 
 @router.get(
-    '/{tg_user_id}/gifs/amount',
+    '/{tg_user_id}/gifs/count',
     response_model=int
 )
-async def get_user_gifs_amount(
+async def get_user_gifs_count(
         tg_user_id: int,
         user_id: int = Depends(get_or_create_user_id_by_tg_user_id),
         user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
-    return await user_library_service.get_user_gifs_amount(
+    return await user_library_service.get_user_gifs_count(
         user_id=user_id
     )
 
@@ -53,13 +54,13 @@ async def get_user_gifs(
         user_id=user_id,
         gif_ids=gif_ids,
         tags=tags,
-        cursor_id=cursor,
+        cursor=cursor,
         limit=limit
     )
 
 @router.get(
     '/{tg_user_id}/tags/all',
-    response_model=list[str]
+    response_model=RawTagsOut
 )
 async def get_user_tags(
         tg_user_id: int,

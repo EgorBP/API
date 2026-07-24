@@ -1,67 +1,75 @@
 import logging
 from typing import Any
+
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
-from app.core.exceptions import TgUserNotFoundError, UserGifsNotFoundError, GifNotFoundError, UserTagsNotFoundError, \
-    InvalidCredentialsError, UserNotFoundError
+
+from app.core.exceptions import AppException
 
 
 class AppExceptionHandlers:
     """
-    Registers FastAPI exception handlers for application-level errors.
+    Registers FastAPI exception handlers for application-level and database errors.
 
-    Converts internal exceptions into HTTP responses and logs
-    unexpected failures with traceback information.
+    Converts internal exceptions into standardized HTTP responses and logs
+    failures with appropriate context.
     """
+
     def __init__(self, logger: logging.Logger | None = None) -> None:
         self.logger = logger or logging.getLogger("app.api.exceptions")
 
     def register(self, app: FastAPI) -> None:
-        """
-        Attach exception handlers to FastAPI application instance.
-
-        :param app: FastAPI application where handlers will be registered.
-        """
+        """Attach exception handlers to the FastAPI application instance."""
         to_register = {
+            AppException: self._handle_app_exception,
             ValueError: self._handle_value_error,
             RequestValidationError: self._handle_validation_error,
             IntegrityError: self._handle_integrity_error,
             OperationalError: self._handle_operational_error,
             SQLAlchemyError: self._handle_sqlalchemy_error,
-            TgUserNotFoundError: self._handle_tg_user_not_found_error,
-            UserGifsNotFoundError: self._handle_gifs_not_found_error,
-            GifNotFoundError: self._handle_gif_not_found_error,
-            UserTagsNotFoundError: self._handle_user_tags_not_found_error,
-            InvalidCredentialsError: self._handle_invalid_credentials_error,
-            UserNotFoundError: self._handle_user_not_found_error,
         }
-        
-        for error, handler in to_register.items():
-            app.add_exception_handler(error, handler)
-    
-    async def _handle_user_not_found_error(
-            self,
-            request: Request,
-            exc: UserNotFoundError
-    ):
-        self.logger.warning(
-            "User not found on %s %s: %s",
-            request.method,
-            request.url.path,
-            exc,
-        )
+
+        for error_cls, handler in to_register.items():
+            app.add_exception_handler(error_cls, handler)
+
+    async def _handle_app_exception(
+        self,
+        request: Request,
+        exc: AppException,
+    ) -> JSONResponse:
+        """
+        Polymorphic handler for all custom application errors (AppException subclasses).
+        """
+        log_payload = {
+            "method": request.method,
+            "path": request.url.path,
+            "code": exc.error_code,
+            "details": exc.details,
+        }
+
+        if exc.status_code >= 500:
+            self.logger.error("App exception occurred: %s", exc.message, extra=log_payload)
+        else:
+            self.logger.warning("App exception occurred: %s", exc.message, extra=log_payload)
+
+        content: dict[str, Any] = {
+            "detail": exc.message,
+            "code": exc.error_code,
+        }
+        if exc.details:
+            content["details"] = exc.details
+
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"detail": str(exc)},
+            status_code=exc.status_code,
+            content=content,
         )
 
-        
     async def _handle_value_error(
-            self, 
-            request: Request, 
-            exc: ValueError
+        self,
+        request: Request,
+        exc: ValueError,
     ) -> JSONResponse:
         self.logger.warning(
             "ValueError on %s %s: %s",
@@ -71,20 +79,23 @@ class AppExceptionHandlers:
         )
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={"detail": str(exc)},
+            content={
+                "detail": str(exc),
+                "code": "VALUE_ERROR",
+            },
         )
 
     async def _handle_validation_error(
         self,
         request: Request,
-        exc: RequestValidationError
+        exc: RequestValidationError,
     ) -> JSONResponse:
         errors = exc.errors()
 
         self.logger.warning(
             "Request validation failed on %s %s: %s",
             request.method,
-            request.url,
+            request.url.path,
             self._compact_validation_errors(errors),
         )
 
@@ -92,6 +103,7 @@ class AppExceptionHandlers:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={
                 "detail": "Validation error.",
+                "code": "VALIDATION_ERROR",
                 "errors": errors,
             },
         )
@@ -99,153 +111,58 @@ class AppExceptionHandlers:
     async def _handle_integrity_error(
         self,
         request: Request,
-        exc: IntegrityError
+        exc: IntegrityError,
     ) -> JSONResponse:
         detail, status_code = self._map_integrity_error(exc)
 
         self.logger.info(
             "Database integrity error on %s %s: %s",
             request.method,
-            request.url,
+            request.url.path,
             detail,
         )
 
         return JSONResponse(
             status_code=status_code,
-            content={"detail": detail},
+            content={
+                "detail": detail,
+                "code": "INTEGRITY_ERROR",
+            },
         )
 
     async def _handle_operational_error(
         self,
         request: Request,
-        exc: OperationalError
+        exc: OperationalError,
     ) -> JSONResponse:
         self.logger.exception(
             "Database operational error on %s %s",
             request.method,
-            request.url,
+            request.url.path,
         )
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"detail": "Service temporarily unavailable."},
+            content={
+                "detail": "Service temporarily unavailable.",
+                "code": "SERVICE_UNAVAILABLE",
+            },
         )
 
     async def _handle_sqlalchemy_error(
         self,
         request: Request,
-        exc: SQLAlchemyError
+        exc: SQLAlchemyError,
     ) -> JSONResponse:
         self.logger.exception(
             "SQLAlchemy error on %s %s",
             request.method,
-            request.url,
+            request.url.path,
         )
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": "Internal database error."},
-        )
-    
-    async def _handle_tg_user_not_found_error(
-            self,
-            request: Request,
-            exc: TgUserNotFoundError
-    ) -> JSONResponse:
-        self.logger.warning(
-            "User not found on %s %s: %s",
-            request.method,
-            request.url,
-            exc,
-            extra={
-                "tg_user_id": exc.tg_user_id
-            }
-        )
-
-        return JSONResponse(
-            status_code=404,
-            content={"detail": str(exc)},
-        )
-    
-    async def _handle_gifs_not_found_error(
-            self,
-            request: Request,
-            exc: UserGifsNotFoundError
-    ) -> JSONResponse:
-        self.logger.info(
-            "User GIF's not found on %s %s",
-            request.method,
-            request.url,
-            extra={
-                "source": exc.source,
-                "user_id": exc.user_id,
-                "tg_user_id": exc.tg_user_id,
-            }
-        )
-
-        return JSONResponse(
-            status_code=404,
-            content={"detail": str(exc)},
-        )
-    
-    async def _handle_gif_not_found_error(
-            self,
-            request: Request,
-            exc: GifNotFoundError
-    ):
-        self.logger.warning(
-            "Gif not found on %s %s",
-            request.method,
-            request.url,
-            extra={
-                "gif_id": exc.gif_id,
-                "user_id": exc.user_id
-            }
-        )
-
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
             content={
-                "detail": str(exc),
-                "gif_id": exc.gif_id
-            },
-        )
-    
-    async def _handle_user_tags_not_found_error(
-            self,
-            request: Request,
-            exc: UserTagsNotFoundError
-    ):
-        self.logger.info(
-            "User tags not found %s %s",
-            request.method,
-            request.url,
-            extra={
-                "user_id": exc.user_id
-            }
-        )
-
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
-            content={
-                "detail": str(exc),
-            },
-        )
-    
-    async def _handle_invalid_credentials_error(
-            self,
-            request: Request,
-            exc: InvalidCredentialsError
-    ):
-        self.logger.warning(
-            "Invalid credentials %s %s",
-            request.method,
-            request.url,
-            exc,
-        )
-
-        return JSONResponse(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            content={
-                "detail": str(exc),
+                "detail": "Internal database error.",
+                "code": "DATABASE_ERROR",
             },
         )
 
@@ -263,15 +180,13 @@ class AppExceptionHandlers:
         """
         Maps PostgreSQL integrity violation codes to HTTP status codes.
 
-        Handles:
-        
         - 23505: unique constraint violation
         - 23503: foreign key violation
         - 23502: not null violation
         """
         orig = getattr(exc, "orig", None)
-
         pgcode = getattr(orig, "pgcode", None)
+
         if pgcode == "23505":
             return "Resource already exists.", status.HTTP_409_CONFLICT
         if pgcode == "23503":

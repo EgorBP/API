@@ -1,5 +1,5 @@
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Generic, TypeVar
 
 DataT = TypeVar("DataT")
@@ -13,10 +13,10 @@ class CursorPaginationMeta(BaseModel, Generic[CursorT]):
 
 
 class CursorPaginatedResponse(BaseModel, Generic[DataT, CursorT]):
-    data: list[DataT]
-    pagination: CursorPaginationMeta[CursorT] | None = None
+    data: list[DataT] = Field(default_factory=list)
+    pagination: CursorPaginationMeta[CursorT]
 
 
-class SortOption(str, Enum):
-    NEW = "new"
-    OLD = "old"
+class SortOrder(str, Enum):
+    ASC = "asc"
+    DESC = "desc"

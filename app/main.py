@@ -9,7 +9,8 @@ from app.api.middleware import ASGIRequestLoggingMiddleware
 setup_logging()
 
 app = FastAPI(
-    title="GIF API",
+    title="GIFs API",
+    version="1.0.0",
     lifespan=lifespan,
 )
 
@@ -20,7 +21,5 @@ app.include_router(api_router)
 
 # TODO:
 """
-эндпоинт на новые и старые гифки и теги
-популярные теги для гифки
-глобальный поиск
+рефреш токен
 """

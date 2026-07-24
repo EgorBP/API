@@ -5,6 +5,7 @@ from app.api.dependencies.service import get_user_library_service, get_user_serv
 from app.api.dependencies.validation import validate_gif_file
 from app.schemas.common import CursorPaginatedResponse
 from app.schemas.gif import GifOut
+from app.schemas.tag import RawTagsOut
 from app.schemas.user import UserOut
 from app.services import UserLibraryService
 from app.services.user import UserService
@@ -26,14 +27,14 @@ async def get_user_info(
 
 
 @router.get(
-    '/gifs/amount',
+    '/gifs/count',
     response_model=int
 )
-async def get_user_gifs_amount(
+async def get_user_gifs_count(
         user_id: int = Depends(get_user_id_from_jwt),
         user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
-    return await user_library_service.get_user_gifs_amount(
+    return await user_library_service.get_user_gifs_count(
         user_id=user_id
     )
 
@@ -65,14 +66,14 @@ async def get_user_gifs_by_id(
         user_id=user_id,
         gif_ids=gif_ids,
         tags=tags,
-        cursor_id=cursor,
+        cursor=cursor,
         limit=limit
     )
 
 
 @router.get(
     '/tags/all', 
-    response_model=list[str]
+    response_model=RawTagsOut
 )
 async def get_user_tags(
         user_id: int = Depends(get_user_id_from_jwt),

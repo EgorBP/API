@@ -1,15 +1,17 @@
 from fastapi import UploadFile
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Sequence
 from redis.asyncio import Redis
 import json
 import logging
 
-from app.core.exceptions import UserGifsNotFoundError, GifNotFoundError, UserTagsNotFoundError
+from app.core.exceptions import GifNotFoundError, TagNotFoundError
 from app.models import UserGifTag, Gif, Tag
 from app.schemas.common import CursorPaginatedResponse, CursorPaginationMeta
 from app.schemas.gif import GifOut
-from app.repositories import UserGifTagRepository, TagRepository, GifRepository, SearchRepository, UserRepository
+from app.repositories import UserGifTagRepository, TagRepository, GifRepository, UserRepository
+from app.schemas.tag import RawTagsOut
 from app.services.interface import StorageProvider
 from app.services.user import UserService
 from app.utils.redis import invalidate_many
@@ -33,41 +35,41 @@ class UserLibraryService:
         
         self._base_cache_ttl = 300
         
-    async def get_user_gifs_amount(
+    async def get_user_gifs_count(
             self,
             user_id: int
     ):
-        cache_path = f"{self._get_service_cache_prefix(user_id)}:gifs:amount"
-        gifs_amount = await self._redis.get(cache_path)
-        if gifs_amount:
+        cache_path = f"{self._get_service_cache_prefix(user_id)}:gifs:count"
+        gifs_count = await self._redis.get(cache_path)
+        if gifs_count:
             logger.info(
-                "Get user gifs amount",
+                "Get user gifs count",
                 extra={
                     "user_id": user_id,
                     "source": "cache"
                 }
             )
-            return gifs_amount
+            return gifs_count
         
         user_repo = UserRepository(self._session)
-        gifs_amount = await user_repo.get_user_gifs_amount(user_id)
+        gifs_count = await user_repo.get_user_gifs_count(user_id)
         logger.info(
-            "Get user gifs amount",
+            "Get user gifs count",
             extra={
                 "user_id": user_id,
                 "source": "database"
             }
         )
         
-        await self._redis.set(cache_path, gifs_amount, ex=self._base_cache_ttl)
+        await self._redis.set(cache_path, gifs_count, ex=self._base_cache_ttl)
         logger.debug(
-            f"Set user gifs amount in cache for {self._base_cache_ttl}",
+            f"Set user gifs count in cache for {self._base_cache_ttl}",
             extra={
                 "user_id": user_id,
             }
         )
         
-        return gifs_amount
+        return gifs_count
 
     async def get_user_gifs_with_tags(
             self,
@@ -77,48 +79,6 @@ class UserLibraryService:
             tags: set[str] | str | None = None,
             cursor: int | None = None
     ) -> CursorPaginatedResponse:
-        """
-        Возвращает гифки пользователя с их тегами в виде вложенного словаря.
-    
-        Формируемая структура:  
-        
-        {
-            'id': внутренний ID пользователя,
-    
-            'tg_user_id': Telegram ID пользователя,
-    
-            'gifs': [
-                {
-                    'id': внутренний ID гифки,
-    
-                    'tg_gif_id': Telegram ID гифки,
-    
-                    'tags': [список тегов]
-                },
-    
-                ...
-            ]
-            
-        }
-    
-        Таблицы `users`, `gifs`, `tags` и `user_gif_tags` связываются через JOIN.
-        Фильтрация возможна по:
-          - `user_id` (внутренний ID в базе),
-          - `tg_user_id` (Telegram ID пользователя),
-          - `gif_ids` (ID гифок в базе, возвращаются только указанные гифки),
-          - `tags` (возвращаются только гифки, содержащие все теги).
-    
-        Если указаны одновременно `user_id` и `tg_user_id`, приоритет имеет `user_id`.
-    
-        :param async_session: Объект асинхронной сессии SQLAlchemy.
-        :param redis: Объект асинхронной сессии Redis.
-        :param user_id: Внутренний ID пользователя (опционально).
-        :param tg_user_id: Telegram ID пользователя (опционально).
-        :param gif_ids: Один или несколько ID гифок для фильтрации (опционально).
-        :param tags: Один или несколько тегов для фильтрации гифок (опционально).
-        :return: Словарь с данными пользователя, гифок и тегов в формате, описанном выше,
-                 или None, если пользователь не найден.
-        """
         gif_repo = GifRepository(self._session)
         
         if isinstance(gif_ids, int):
@@ -135,7 +95,7 @@ class UserLibraryService:
         normalized_gif_ids = sorted([str(gif_id).strip() for gif_id in gif_ids_c])
         gif_ids_string = ",".join(normalized_gif_ids) if normalized_gif_ids else "all"
 
-        cursor_string = str(cursor_id) if cursor_id is not None else "first_page"
+        cursor_string = str(cursor) if cursor is not None else "first_page"
         cache_key = f"{self._get_service_cache_prefix(user_id)}:gif_ids:{gif_ids_string}:tags:{tags_string}:cursor:{cursor_string}:limit:{limit}"
     
         cached_data = await self._redis.get(cache_key)
@@ -157,19 +117,13 @@ class UserLibraryService:
             limit=limit + 1
         )
         
-        if not rows:
-            raise UserGifsNotFoundError(
-                source="database",
-                user_id=user_id,
-            )
-        
-        if len(rows) > limit:
+        has_next = len(rows) > limit
+
+        if has_next:
             rows = rows[:limit]
             next_cursor = rows[-1].id
-            has_next = True
         else:
             next_cursor = None
-            has_next = False
         
         gifs_data = [
             GifOut.model_validate(row._mapping)
@@ -187,7 +141,7 @@ class UserLibraryService:
         
         await self._redis.set(cache_key, final_data.model_dump_json(), ex=self._base_cache_ttl)
         
-        logger.info(
+        logger.debug(
             f"Set new cache for {self._base_cache_ttl}s",
             extra={
                 "user_id": user_id,
@@ -206,12 +160,7 @@ class UserLibraryService:
     async def get_all_user_tags(
             self,
             user_id: int,
-    ) -> set[str]:
-        """
-        Возвращает все уникальные теги, связанные с GIF пользователя.
-    
-        :return: Множество уникальных тегов (`set[str]`) или None, если пользователь не найден.
-        """
+    ) -> RawTagsOut:
         tag_repo = TagRepository(self._session)
 
         cache_key = f"{self._get_service_cache_prefix(user_id)}:all_user_tags"
@@ -225,21 +174,16 @@ class UserLibraryService:
                     "user_id": user_id,
                 }
             )
-            return json.loads(cached_data)
+            return RawTagsOut.model_validate_json(cached_data)
         
         tags = await tag_repo.get_unique_user_tags(user_id)
         
-        if not tags:
-            logger.info(
-                "Tags not found",
-                extra={
-                    "source": "database",
-                    "user_id": user_id,
-                }
-            )
-            raise UserTagsNotFoundError(user_id)
+        tags = RawTagsOut(
+            tags=tags,
+            count=len(tags)
+        )
         
-        await self._redis.set(cache_key, json.dumps(list(tags)), ex=self._base_cache_ttl)
+        await self._redis.set(cache_key, tags.model_dump_json(), ex=self._base_cache_ttl)
     
         logger.info(
             f"Set new cache for {self._base_cache_ttl}s",
@@ -327,20 +271,6 @@ class UserLibraryService:
             gif_id: int,
             tags: set[str],
     ) -> None:
-        """
-        Добавляет (или обновляет) связь между пользователем, гифкой и её тегами.
-        Делает commit если операция прошла успешно и rollback в случае возникновения ошибок. 
-    
-        Функция гарантирует, что:
-    
-        - если какого-либо поля не было в нужной таблице, оно автоматически создастся.
-        - для каждой комбинации (user, gif, tag) создастся запись в таблице `user_gif_tags`.
-        - старые теги будут удалены.
-    
-        :param gif_id: Telegram ID гифки.
-        :param tags: Один тег или список тегов, которые будут связаны с гифкой.
-        :return: None (изменения фиксируются в базе данных через session).
-        """
         tag_repository = TagRepository(self._session)
         user_gif_tag_repository = UserGifTagRepository(self._session)
         gif_repository = GifRepository(self._session)
@@ -391,16 +321,6 @@ class UserLibraryService:
             user_id: int,
             gif_ids: list[int],
     ) -> int:
-        """
-        Удаляет GIF вместе с тегами для конкретного пользователя. 
-        Делает commit если операция прошла успешно и rollback в случае возникновения ошибок.
-        
-        Удаляет весь кэш пользователя.
-    
-        :param gif_ids: ID для GIF которое нужно удалить у юзера.
-    
-        :return: Количество удаленных строк
-        """
         user_gif_tag_repository = UserGifTagRepository(self._session)
         
         try:
@@ -411,7 +331,7 @@ class UserLibraryService:
                 }
             )
             if deleted is None:
-                raise UserGifsNotFoundError(
+                raise GifNotFoundError(
                     user_id=user_id
                 )
             
@@ -446,7 +366,7 @@ class UserLibraryService:
             match=f"{self._get_service_cache_prefix(user_id)}:*"
         )
         
-        logger.info(
+        logger.debug(
             f"User library cache ({objects_count} elements) invalidated",
             extra={
                 "user_id": user_id,
@@ -461,33 +381,15 @@ class UserLibraryService:
             tag_repository: TagRepository,
             user_gif_tag_repository: UserGifTagRepository
     ) -> None:
-        # Вставляем теги
-        await tag_repository.create_many(
-            [
-                {Tag.tag: tag}
-                for tag in tags
-            ],
-            ignore_conflicts=True
+        tags = await tag_repository.fake_upsert_tags(tags)
+        tag_ids = {tag.id for tag in tags}
+        
+        await user_gif_tag_repository.delete_except_tag_ids(
+            user_id=user_id,
+            gif_id=gif_id,
+            keep_tag_ids=tag_ids
         )
-
-        # Получаем tag_id
-        tag_ids = await tag_repository.get_many(
-            columns=Tag.id,
-            filters={
-                Tag.tag: tags
-            },
-            scalars=True
-        )
-
-        # Снимаем связь между старыми тегами и гифкой
-        await user_gif_tag_repository.delete_many(
-            filters={
-                UserGifTag.user_id: user_id,
-                UserGifTag.gif_id: gif_id,
-            }
-        )
-
-        # Создаем связь между новыми тегами, GIF и пользователем
+        
         await user_gif_tag_repository.create_many(
             [
                 {
@@ -496,7 +398,8 @@ class UserLibraryService:
                     UserGifTag.tag_id: tag_id
                 }
                 for tag_id in tag_ids
-            ]
+            ],
+            ignore_conflicts=True
         )
 
     @staticmethod

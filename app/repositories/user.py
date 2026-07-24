@@ -46,7 +46,7 @@ class UserRepository(_BaseCRUD[User]):
             User.tg_id: tg_id
         })
     
-    async def get_user_gifs_amount(
+    async def get_user_gifs_count(
             self,
             user_id: int
     ) -> int:
