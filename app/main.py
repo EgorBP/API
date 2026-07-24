@@ -21,5 +21,6 @@ app.include_router(api_router)
 
 # TODO:
 """
-рефреш токен
+докстринги
+тесты
 """

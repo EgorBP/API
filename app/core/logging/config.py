@@ -35,7 +35,7 @@ LOGGING_CONFIG = {
 
     "loggers": {
         "app": {
-            "level": "DEBUG",
+            "level": "INFO",
             "handlers": ["detailed_console"],
             "propagate": False,
         },

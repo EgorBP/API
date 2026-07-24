@@ -1,9 +1,12 @@
-from typing import Final
+from typing import Final, Sequence, Any
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
+
 from app.repositories import _BaseCRUD
 from app.models import User, UserGifTag, Gif
+from app.repositories.base import T
 
 
 # TODO
@@ -45,6 +48,16 @@ class UserRepository(_BaseCRUD[User]):
         return await self.create_one({
             User.tg_id: tg_id
         })
+    
+    async def delete_user(
+            self,
+            user_id: int
+    ) -> _model | None:
+        user= await self.delete_many(
+            filters={self._model.id: user_id}
+        )
+        
+        return user[0] if user else None
     
     async def get_user_gifs_count(
             self,

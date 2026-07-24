@@ -192,7 +192,7 @@ class UserService:
         user_repository = UserRepository(self._session)
         
         try:
-            deleted = await user_repository.delete_many(user_id)
+            deleted = await user_repository.delete_user(user_id)
             
             if deleted is None:
                 await self._update_user_status_in_cache(
@@ -237,7 +237,7 @@ class UserService:
     ) -> None:
         objects_count = await invalidate_many(
             redis=self._redis,
-            match=f"{self.get_user_cache_prefix(user_id)}*"
+            match=f"*{user_id}*"
         )
         await self._redis.delete(self._get_user_alias_cache_path(tg_user_id))
         
