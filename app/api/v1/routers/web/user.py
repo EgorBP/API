@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, UploadFile, Form, status
+from fastapi import APIRouter, Depends, Query, UploadFile, Form, status, Body
 
 from app.api.dependencies.auth import get_user_id_from_jwt
 from app.api.dependencies.service import get_user_library_service, get_user_service
@@ -114,7 +114,7 @@ async def upload_new_gif(
 )
 async def update_gif_tags(
         gif_id: int,
-        tags: set[str],
+        tags: set[str] = Body(),
         user_id: int = Depends(get_user_id_from_jwt),
         user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):

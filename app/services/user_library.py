@@ -330,7 +330,7 @@ class UserLibraryService:
                     UserGifTag.gif_id: gif_ids,
                 }
             )
-            if deleted is None:
+            if not deleted:
                 raise GifNotFoundError(
                     user_id=user_id
                 )

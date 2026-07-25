@@ -284,10 +284,8 @@ class _BaseCRUD(Generic[T]):
 
     async def update_one(
             self,
-            instance_id: int | None,
             values: dict[InstrumentedAttribute, Any],
-            *,
-            filters: dict[InstrumentedAttribute, Any] | None = None,
+            filters: dict[InstrumentedAttribute, Any]
     ) -> T:
         """
         Универсальный метод обновления одной записи в таблице модели.
@@ -303,20 +301,10 @@ class _BaseCRUD(Generic[T]):
         """
         validate_columns_for_model(values.keys(), self._model)
         
-        if instance_id is not None:
-            stmt = update(self._model).where(inspect(self._model).primary_key[0] == instance_id).values(values).returning(self._model)
-            result = await self._session.execute(stmt)
-            return result.scalar_one()
-
-        if not filters:
-            raise ValueError("Нужно указать либо instance_id, либо фильтры для изменения.")
-
-        stmt = update(self._model).returning(self._model)
-            
+        stmt = update(self._model).values(values).returning(self._model)
         stmt = self._add_filters_to_stmt(stmt, filters)
 
         result = await self._session.execute(stmt)
-        
         return result.scalar_one()
 
     async def delete_many(
