@@ -2,7 +2,6 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
-from app.core.exceptions import GifNotFoundError
 from app.repositories import GifRepository
 from app.schemas.common import SortOrder, CursorPaginatedResponse, CursorPaginationMeta
 from app.schemas.gif import PopularGifsOut, RawGifOut
@@ -42,23 +41,24 @@ class GifService:
             tags: set[str] | None = None,
             cursor: int | None = None
     ) -> CursorPaginatedResponse[RawGifOut, int]:
-        cache_key = f"gifs:{sorting.value}:tags:{{tags}}:limit:{limit}"
+        cache_key = None
         if cursor is None:
             if not tags:
-                cache_key = cache_key.format(tags="all")
+                cache_key = f"gifs:{sorting.value}:tags:all:limit:{limit}"
             elif len(tags) == 1: 
-                cache_key = cache_key.format(tags=tags)
+                cache_key = f"gifs:{sorting.value}:tags:{tags}:limit:{limit}"
             
-            gifs = await self._redis.get(cache_key)
-            
-            if gifs is not None:
-                logger.info(
-                    f"Get {sorting.value} gifs",
-                    extra={
-                        "source": "cache"
-                    }
-                )
-                return CursorPaginatedResponse.model_validate_json(gifs)
+            if cache_key is not None:
+                gifs = await self._redis.get(cache_key)
+                
+                if gifs is not None:
+                    logger.info(
+                        f"Get {sorting.value} gifs",
+                        extra={
+                            "source": "cache"
+                        }
+                    )
+                    return CursorPaginatedResponse.model_validate_json(gifs)
         
         gif_repo = GifRepository(self._session)
         
@@ -91,7 +91,7 @@ class GifService:
             )
         )
         
-        if cursor is None:
+        if cache_key is not None:
             await self._redis.set(cache_key, final_data.model_dump_json(), ex=self._base_cache_ttl)
             logger.debug(
                 f"Set new cache for {self._base_cache_ttl}s",
