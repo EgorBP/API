@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, Form, UploadFile, status
+from fastapi import APIRouter, Depends, Query, Form, UploadFile, status, Body
 
 from app.api.dependencies.service import get_user_library_service
 from app.api.dependencies.user import get_or_create_user_id_by_tg_user_id
@@ -105,7 +105,7 @@ async def upload_new_gif(
 async def update_gif_tags(
         tg_user_id: int,
         gif_id: int,
-        tags: set[str],
+        tags: set[str] = Body(),
         user_id: int = Depends(get_or_create_user_id_by_tg_user_id),
         user_library_service: UserLibraryService = Depends(get_user_library_service)
 ):
