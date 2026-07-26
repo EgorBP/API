@@ -1,3 +1,5 @@
+"""Combines the web-facing users and auth routers under `/web`."""
+
 from fastapi import APIRouter
 from app.api.v1.routers.web.user import router as users_router
 from app.api.v1.routers.web.auth import router as auth_router

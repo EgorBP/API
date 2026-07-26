@@ -1,3 +1,11 @@
+"""FastAPI application entry point.
+
+Wires together logging, the app-level exception handlers, the request
+logging middleware, the API router, and the startup/shutdown lifespan
+(Redis connection + background popularity-recalculation tasks). Run via
+Uvicorn/Gunicorn as configured in the Dockerfile.
+"""
+
 from fastapi import FastAPI
 from app.api import api_router
 from app.core.lifespan import lifespan
@@ -21,6 +29,5 @@ app.include_router(api_router)
 
 # TODO:
 """
-докстринги
 тесты
 """

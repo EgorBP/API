@@ -10,11 +10,22 @@ logger = logging.getLogger(__name__)
 
 
 class GifService:
+    """Read-side operations for GIFs, backed by a Redis cache.
+
+    Popular GIFs are cached by a background task (see `app.tasks.gif`);
+    `get_gifs` caches its own results for a short TTL.
+    """
     def __init__(
             self,
             session: AsyncSession,
             redis: Redis,
     ):
+        """Initializes the service.
+
+        Args:
+            session: The async SQLAlchemy session for GIF lookups.
+            redis: The Redis client used for caching.
+        """
         self._session = session
         self._redis = redis
         
@@ -23,6 +34,18 @@ class GifService:
     async def get_popular(
             self
     ) -> PopularGifsOut:
+        """Returns the site-wide popular GIFs list from cache.
+
+        This never queries the database directly — the list is
+        maintained by a periodic background task
+        (`recalculate_popular_gifs_loop`). If the cache is empty (e.g.
+        the background task hasn't run yet), an empty result is returned
+        rather than falling back to a live query.
+
+        Returns:
+            The cached popular GIFs, or an empty result if nothing is
+            cached yet.
+        """
         popular_gifs = await self._redis.get("popular:gifs")
         
         if popular_gifs is None:
@@ -41,6 +64,26 @@ class GifService:
             tags: set[str] | None = None,
             cursor: int | None = None
     ) -> CursorPaginatedResponse[RawGifOut, int]:
+        """Lists GIFs across all users, optionally filtered by tags.
+
+        Only the first page (no `tags`, or exactly one tag, and no
+        `cursor`) is cached, since a cache key that also captured
+        multi-tag combinations and cursor values would explode in
+        cardinality for little benefit; other queries always hit the
+        database.
+
+        Args:
+            limit: Maximum number of GIFs to return per page.
+            sorting: Sort direction by GIF ID.
+            tags: If given, only GIFs tagged with all of these tags are
+                returned.
+            cursor: If given, continues a previous page from this GIF ID,
+                per `sorting`.
+
+        Returns:
+            A page of GIFs plus pagination metadata (`has_next`,
+            `next_cursor`).
+        """
         cache_key = None
         if cursor is None:
             if not tags:

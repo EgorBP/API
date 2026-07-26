@@ -80,4 +80,11 @@ LOGGING_CONFIG = {
 
 
 def setup_logging() -> None:
+    """Applies the application's logging configuration.
+
+    Loads `LOGGING_CONFIG` via `logging.config.dictConfig`, configuring
+    formatters, handlers, and per-logger levels for `app.*`, `uvicorn.*`,
+    and `alembic`. Must be called once, before the FastAPI app starts
+    handling requests.
+    """
     logging.config.dictConfig(LOGGING_CONFIG)

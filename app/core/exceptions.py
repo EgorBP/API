@@ -2,8 +2,17 @@ from typing import Any
 
 
 class AppException(Exception):
-    """Base exception for all application-level errors."""
+    """Base class for all application-level errors.
 
+    Subclasses are caught by `AppExceptionHandlers` and converted into a
+    standardized JSON error response. Raise this directly only for
+    generic cases; prefer a domain-specific subclass where one exists.
+
+    Attributes:
+        status_code: Default HTTP status code returned for this error.
+        error_code: Default machine-readable error code returned for this
+            error.
+    """
     status_code: int = 400
     error_code: str = "BAD_REQUEST"
 
@@ -14,6 +23,15 @@ class AppException(Exception):
         error_code: str | None = None,
         details: dict[str, Any] | None = None,
     ) -> None:
+        """Initializes the exception.
+
+        Args:
+            message: Human-readable error message returned to the client.
+            status_code: Overrides the class-level `status_code` if given.
+            error_code: Overrides the class-level `error_code` if given.
+            details: Extra structured data included in the response body,
+                e.g. the offending IDs.
+        """
         self.message = message
         if status_code is not None:
             self.status_code = status_code
@@ -24,8 +42,7 @@ class AppException(Exception):
 
 
 class NotFoundError(AppException):
-    """Base exception for HTTP 404 Not Found errors."""
-
+    """Base class for HTTP 404 errors."""
     status_code = 404
     error_code = "NOT_FOUND"
 
@@ -35,17 +52,22 @@ class NotFoundError(AppException):
         error_code: str | None = None,
         details: dict[str, Any] | None = None,
     ) -> None:
+        """Initializes the exception.
+
+        Args:
+            message: Human-readable error message returned to the client.
+            error_code: Overrides the class-level `error_code` if given.
+            details: Extra structured data included in the response body.
+        """
         super().__init__(
             message=message,
-            status_code=404,
             error_code=error_code or self.error_code,
             details=details,
         )
 
 
 class UnauthorizedError(AppException):
-    """Base exception for HTTP 401 Unauthorized errors."""
-
+    """Base class for HTTP 401 errors."""
     status_code = 401
     error_code = "UNAUTHORIZED"
 
@@ -55,21 +77,23 @@ class UnauthorizedError(AppException):
         error_code: str | None = None,
         details: dict[str, Any] | None = None,
     ) -> None:
+        """Initializes the exception.
+
+        Args:
+            message: Human-readable error message returned to the client.
+            error_code: Overrides the class-level `error_code` if given.
+            details: Extra structured data included in the response body.
+        """
         super().__init__(
             message=message,
-            status_code=401,
+            status_code=self.status_code,
             error_code=error_code or self.error_code,
             details=details,
         )
 
 
-# =====================================================================
-# Domain Exceptions
-# =====================================================================
-
-
 class UserNotFoundError(NotFoundError):
-    """Raised when a system user or Telegram user is not found."""
+    """Raised when a user cannot be found by internal ID or Telegram ID."""
 
     def __init__(
         self,
@@ -77,6 +101,17 @@ class UserNotFoundError(NotFoundError):
         tg_user_id: int | None = None,
         message: str | None = None,
     ) -> None:
+        """Initializes the exception.
+
+        At least one of `user_id` / `tg_user_id` should be provided so the
+        auto-generated message and `details` are meaningful; if neither is
+        given, a generic "not found" message is used.
+
+        Args:
+            user_id: Internal ID of the user that was not found.
+            tg_user_id: Telegram ID of the user that was not found.
+            message: Overrides the auto-generated message if given.
+        """
         details: dict[str, Any] = {}
         if user_id is not None:
             details["user_id"] = user_id
@@ -99,7 +134,7 @@ class UserNotFoundError(NotFoundError):
 
 
 class GifNotFoundError(NotFoundError):
-    """Raised when one or multiple GIFs (or a user's GIFs) are not found."""
+    """Raised when one or more GIFs cannot be found."""
 
     def __init__(
         self,
@@ -110,6 +145,24 @@ class GifNotFoundError(NotFoundError):
         source: str | None = None,
         message: str | None = None,
     ) -> None:
+        """Initializes the exception.
+
+        Covers several cases: a single missing GIF (`gif_id`), a batch
+        where some IDs are missing (`gif_ids`), or a user's library simply
+        having no matching GIFs. `user_id` / `tg_user_id` / `source` are
+        added to `details` and to the message when provided, to make the
+        response more specific.
+
+        Args:
+            gif_id: ID of the single GIF that was not found.
+            gif_ids: IDs of the GIFs that were not found, for batch
+                lookups.
+            user_id: Internal ID of the user the lookup was scoped to.
+            tg_user_id: Telegram ID of the user the lookup was scoped to.
+            source: Free-form label identifying which operation raised
+                this error, included in `details` for easier debugging.
+            message: Overrides the auto-generated message if given.
+        """
         details: dict[str, Any] = {}
         if gif_id is not None:
             details["gif_id"] = gif_id
@@ -145,7 +198,7 @@ class GifNotFoundError(NotFoundError):
 
 
 class TagNotFoundError(NotFoundError):
-    """Raised when one or multiple tags are not found."""
+    """Raised when one or more tags cannot be found."""
 
     def __init__(
         self,
@@ -155,6 +208,16 @@ class TagNotFoundError(NotFoundError):
         source: str | None = None,
         message: str | None = None,
     ) -> None:
+        """Initializes the exception.
+
+        Args:
+            tag_id: ID of the tag that was not found.
+            user_id: Internal ID of the user the lookup was scoped to.
+            tg_user_id: Telegram ID of the user the lookup was scoped to.
+            source: Free-form label identifying which operation raised
+                this error, included in `details` for easier debugging.
+            message: Overrides the auto-generated message if given.
+        """
         details: dict[str, Any] = {}
         if tag_id is not None:
             details["tag_id"] = tag_id
@@ -186,9 +249,17 @@ class TagNotFoundError(NotFoundError):
 
 
 class InvalidCredentialsError(UnauthorizedError):
-    """Raised when authentication credentials are invalid or missing."""
+    """Raised when authentication credentials are invalid, expired, or missing."""
 
-    def __init__(self, message: str = "Invalid credentials.") -> None:
+    def __init__(
+            self, 
+            message: str = "Invalid credentials."
+    ) -> None:
+        """Initializes the exception.
+
+        Args:
+            message: Human-readable error message returned to the client.
+        """
         super().__init__(
             message=message,
             error_code="INVALID_CREDENTIALS",

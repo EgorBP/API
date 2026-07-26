@@ -12,11 +12,25 @@ logger = logging.getLogger(__name__)
 
 
 class UserService:
+    """User lookups and lifecycle, backed by a multi-layer Redis cache.
+
+    Three independent cache entries are kept per user: an existence
+    "status" (`UserStatus`), a Telegram-ID-to-internal-ID alias, and a
+    serialized `UserOut` info snapshot — each with its own TTL, so a cold
+    cache for one doesn't force recomputing the others.
+    """
+    
     def __init__(
             self,
             session: AsyncSession,
             redis: Redis,
     ):
+        """Initializes the service.
+
+        Args:
+            session: The async SQLAlchemy session for user lookups.
+            redis: The Redis client used for caching.
+        """
         self._session = session
         self._redis = redis
         
@@ -33,16 +47,38 @@ class UserService:
             cls,
             user_id: int
     ) -> str:
+        """Builds the common Redis key prefix used for a user's cache entries.
+
+        Args:
+            user_id: Internal ID of the user.
+
+        Returns:
+            The prefix, e.g. ``"user_id:42"``.
+        """
         return f"user_id:{user_id}"
 
     async def exists(
             self,
             user_id: int
     ) -> bool:
+        """Checks whether a user with the given internal ID exists.
+
+        Consults the cached status first; on a cache miss, queries the
+        database and caches the result (as `ACTIVE` or
+        `DELETED_OR_NOT_FOUND`) for future calls.
+
+        Args:
+            user_id: Internal ID of the user.
+
+        Returns:
+            True if the user exists, False otherwise.
+        """
         user_status = await self._get_user_status_from_cache(user_id)
         
         if user_status == UserStatus.ACTIVE:
             return True
+        elif user_status == UserStatus.DELETED_OR_NOT_FOUND:
+            return False
         
         user_repository = UserRepository(self._session)
         result = await user_repository.get_one(
@@ -69,6 +105,20 @@ class UserService:
             self,
             user_id: int
     ) -> UserOut:
+        """Fetches a user's public info, serving from cache when possible.
+
+        Args:
+            user_id: Internal ID of the user.
+
+        Returns:
+            The user's info.
+
+        Raises:
+            AttributeError: If no user exists with this `user_id` (the
+                database lookup returns None and validation against it
+                fails) — callers should ensure the user exists first,
+                e.g. via `exists`.
+        """
         cache_path = f"{self.get_user_cache_prefix(user_id)}:info"
         
         user_info = await self._redis.get(cache_path)
@@ -111,6 +161,19 @@ class UserService:
             self,
             tg_user_id: int
     ) -> int:
+        """Resolves a Telegram user ID to an internal user ID, creating one if needed.
+
+        Checks the cached alias first, then the database; if no user
+        exists yet for this `tg_user_id`, creates one. This is the
+        primary entry point for turning a Telegram identity into an
+        internal user record.
+
+        Args:
+            tg_user_id: Telegram ID of the user.
+
+        Returns:
+            The internal user ID, whether pre-existing or newly created.
+        """
         user_id = await self._get_user_id_from_cache_alias(tg_user_id)
 
         if user_id:
@@ -189,6 +252,14 @@ class UserService:
             self,
             user_id: int
     ) -> None:
+        """Deletes a user and invalidates all of their cached data.
+
+        Args:
+            user_id: Internal ID of the user to delete.
+
+        Raises:
+            UserNotFoundError: If no user exists with this `user_id`.
+        """
         user_repository = UserRepository(self._session)
         
         try:
@@ -212,7 +283,7 @@ class UserService:
             
             await self._invalidate_all_user_cache(
                 user_id=user_id,
-                tg_user_id=deleted[0].tg_id
+                tg_user_id=deleted.tg_id
             )
             await self._update_user_status_in_cache(
                 user_id=user_id,
@@ -235,6 +306,17 @@ class UserService:
             user_id: int,
             tg_user_id: int
     ) -> None:
+        """Removes every cache entry associated with a user.
+
+        Matches and deletes any Redis key containing `user_id` (covering
+        the status and info caches, which are keyed by internal ID) and
+        separately removes the Telegram-ID alias key, which is keyed by
+        `tg_user_id` instead.
+
+        Args:
+            user_id: Internal ID of the user.
+            tg_user_id: Telegram ID of the user.
+        """
         objects_count = await invalidate_many(
             redis=self._redis,
             match=f"*{user_id}*"
@@ -252,6 +334,14 @@ class UserService:
             self,
             user_id: int
     ) -> str:
+        """Builds the Redis key for a user's cached existence status.
+
+        Args:
+            user_id: Internal ID of the user.
+
+        Returns:
+            The Redis key, e.g. ``"user_id:42:status"``.
+        """
         return f"{self.get_user_cache_prefix(user_id)}:status"
     
     async def _update_user_status_in_cache(
@@ -260,6 +350,13 @@ class UserService:
             new_status: UserStatus,
             ex: int
     ):
+        """Writes a user's existence status to cache with a TTL.
+
+        Args:
+            user_id: Internal ID of the user.
+            new_status: The status to cache.
+            ex: Time-to-live for the cache entry, in seconds.
+        """
         await self._redis.set(
             self._get_user_status_cache_path(user_id),
             new_status.value,
@@ -277,6 +374,14 @@ class UserService:
             self,
             user_id: int
     ) -> UserStatus | None:
+        """Reads a user's cached existence status, if present.
+
+        Args:
+            user_id: Internal ID of the user.
+
+        Returns:
+            The cached status, or None on a cache miss.
+        """
         user_status = await self._redis.get(self._get_user_status_cache_path(user_id))
         
         if user_status is not None:
@@ -294,6 +399,14 @@ class UserService:
     def _get_user_alias_cache_path(
             tg_user_id: int
     ) -> str:
+        """Builds the Redis key for a Telegram-ID-to-internal-ID alias.
+
+        Args:
+            tg_user_id: Telegram ID of the user.
+
+        Returns:
+            The Redis key, e.g. ``"tg_user_id:123456:user_id"``.
+        """
         return f"tg_user_id:{tg_user_id}:user_id"
     
     async def _create_user_alias_in_cache(
@@ -301,6 +414,12 @@ class UserService:
             tg_user_id: int,
             user_id: int
     ):
+        """Caches the mapping from a Telegram ID to an internal user ID.
+
+        Args:
+            tg_user_id: Telegram ID of the user.
+            user_id: Internal ID of the user.
+        """
         await self._redis.set(
             self._get_user_alias_cache_path(tg_user_id), 
             user_id, 
@@ -319,6 +438,14 @@ class UserService:
             self,
             tg_user_id: int
     ) -> int | None:
+        """Reads a user's cached internal ID by their Telegram ID.
+
+        Args:
+            tg_user_id: Telegram ID of the user.
+
+        Returns:
+            The cached internal user ID, or None on a cache miss.
+        """
         user_id = await self._redis.get(self._get_user_alias_cache_path(tg_user_id))
         
         if user_id is not None:

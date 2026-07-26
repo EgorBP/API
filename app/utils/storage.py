@@ -2,10 +2,25 @@ import hashlib
 from fastapi import UploadFile
 
 
-# TODO: update dockstring
 async def create_unique_filename_and_hash(
         file: UploadFile
 ) -> tuple[str, str]:
+    """Computes a content hash for a file and derives a filename from it.
+
+    Streams the file in 1 MB chunks to hash it without loading the whole
+    file into memory, then rewinds it so the caller can still read its
+    contents afterward (e.g. to save it to storage).
+
+    Args:
+        file: The uploaded file to hash. Its extension is preserved in
+            the generated filename, defaulting to "gif" if none is
+            present.
+
+    Returns:
+        A tuple of `(unique_filename, file_hash)`, where
+        `unique_filename` is `"{file_hash}.{ext}"` and `file_hash` is the
+        hex-encoded SHA-256 digest of the file's contents.
+    """
     await file.seek(0)
 
     sha256_hash = hashlib.sha256()

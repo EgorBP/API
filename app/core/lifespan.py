@@ -12,6 +12,20 @@ logger = logging.getLogger("app.lifespan")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Manages startup and shutdown of shared application resources.
+
+    On startup, connects to Redis and launches the background tasks that
+    periodically recalculate popular GIFs and tags. On shutdown, cancels
+    those tasks and closes the Redis connection, in that order.
+
+    Args:
+        app: The FastAPI application instance. The created Redis client is
+            stored on `app.state.redis`.
+
+    Yields:
+        None. Control returns to FastAPI while the application serves
+        requests; teardown runs after the `yield` resumes.
+    """
     app.state.redis = await create_redis_client()
     logger.info("Redis successfully connected.")
 

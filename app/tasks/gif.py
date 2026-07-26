@@ -14,6 +14,26 @@ async def recalculate_popular_gifs_loop(
         limit: int,
         recalc_after: int
 ):
+    """Periodically recomputes and caches the site-wide popular GIFs list.
+
+    Runs forever until cancelled: computes the popular GIFs, stores them
+    in Redis under `"popular:gifs"`, sleeps for `recalc_after` seconds,
+    and repeats. A failure on one iteration (e.g. a transient database
+    error) is logged and does not stop the loop — the stale cached value
+    is simply left in place until the next successful iteration.
+
+    Meant to be launched as a background task from `app.core.lifespan`
+    and canceled on application shutdown.
+
+    Args:
+        redis: The Redis client to write the cached result to.
+        limit: Maximum number of GIFs to include in the popular list.
+        recalc_after: Delay between recalculations, in seconds.
+
+    Raises:
+        asyncio.CancelledError: Propagated when the task is canceled,
+            so the caller can await its clean shutdown.
+    """
     while True:
         try:
             async with AsyncSessionLocal() as session:

@@ -1,30 +1,41 @@
 from datetime import datetime, timezone
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
-class TagBase(BaseModel):
-    tag: str
+TagString = Annotated[
+    str, 
+    StringConstraints(
+        min_length=1, 
+        max_length=100, 
+        strip_whitespace=True,
+    )
+]
+"""
+Type alias for valid tag strings.
 
-
-class TagCreate(TagBase):
-    pass
-
-
-class TagOut(TagBase):
-    id: int
-
-    model_config = ConfigDict(from_attributes=True)
+Validates that the tag is a non-empty string stripped of leading/trailing whitespace, 
+with a length between 1 and 100 characters.
+"""
 
 
 class RawTagsOut(BaseModel):
-    tags: list[str]
+    """A flat list of tag strings, with a count."""
+    tags: list[TagString]
     count: int
     
     model_config = ConfigDict(from_attributes=True)
 
 
 class PopularTagsOut(BaseModel):
-    tags: list[str]
+    """The cached site-wide popular tags list.
+
+    Attributes:
+        updated_at: When this list was last recalculated by the
+            background task.
+    """
+    tags: list[TagString]
     count: int
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

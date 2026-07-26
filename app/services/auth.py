@@ -15,11 +15,22 @@ logger = logging.getLogger(__name__)
 
 
 class AuthService:
+    """Handles Telegram-based login and JWT access/refresh token lifecycle.
+
+    Refresh tokens are stored in Redis (one active token per user) so a
+    token can be invalidated on logout or superseded by a newer one.
+    """
     def __init__(
             self,
             session: AsyncSession,
             redis: Redis
     ):
+        """Initializes the service.
+
+        Args:
+            session: The async SQLAlchemy session for user lookups.
+            redis: The Redis client used to store refresh tokens.
+        """
         self._session = session
         self._redis = redis
 
@@ -27,7 +38,24 @@ class AuthService:
             self,
             auth_data: TelegramAuthSchema
     ) -> TokenResponseSchema:
+        """Logs a user in via Telegram Login Widget data, issuing JWTs.
 
+        Verifies the widget's signature and freshness, resolves the
+        Telegram user to an internal user (creating one if this is their
+        first login), issues a new access/refresh token pair, and stores
+        the refresh token in Redis, overwriting any previous one for this
+        user.
+
+        Args:
+            auth_data: The data returned by the Telegram Login Widget.
+
+        Returns:
+            The new access and refresh tokens.
+
+        Raises:
+            InvalidCredentialsError: If the widget data's signature is
+                invalid or has expired.
+        """
         user_service = UserService(
             session=self._session,
             redis=self._redis
@@ -72,6 +100,24 @@ class AuthService:
             self, 
             refresh_token: str
     ) -> TokenResponseSchema:
+        """Exchanges a valid refresh token for a new access/refresh pair.
+
+        Validates the token's signature, type, and expiry, then checks it
+        against the single refresh token stored in Redis for that user —
+        this makes each refresh token single-use and invalidates any
+        older one still floating around (e.g. from a previous device).
+
+        Args:
+            refresh_token: The refresh token to exchange.
+
+        Returns:
+            A new access and refresh token pair.
+
+        Raises:
+            InvalidCredentialsError: If the token is malformed, expired,
+                not of type "refresh", or does not match the token
+                currently stored for that user in Redis.
+        """
         try:
             payload = jwt.decode(
                 refresh_token,
@@ -127,6 +173,14 @@ class AuthService:
             self, 
             user_id: int
     ) -> None:
+        """Logs a user out by invalidating their stored refresh token.
+
+        The corresponding access token, if still unexpired, remains valid
+        until it naturally expires — logout only prevents future refreshes.
+
+        Args:
+            user_id: Internal ID of the user to log out.
+        """
         await self._redis.delete(self._get_refresh_token_path(user_id))
         
         logger.info(
@@ -140,4 +194,12 @@ class AuthService:
     def _get_refresh_token_path(
             user_id: int | str
     ) -> str:
+        """Builds the Redis key under which a user's refresh token is stored.
+
+        Args:
+            user_id: Internal ID of the user.
+
+        Returns:
+            The Redis key, e.g. ``"refresh_token:42"``.
+        """
         return f"refresh_token:{user_id}"
