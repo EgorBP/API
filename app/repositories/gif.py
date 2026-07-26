@@ -1,9 +1,11 @@
-from typing import Final, Sequence
+from collections.abc import Sequence
+from typing import Final
 
-from sqlalchemy import select, func, distinct, Row
+from sqlalchemy import Row, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import Gif, Tag, UserGifTag
 from app.repositories import _BaseRepository
-from app.models import Gif, UserGifTag, Tag
 from app.schemas.common import SortOrder
 
 

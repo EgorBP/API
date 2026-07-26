@@ -1,12 +1,13 @@
 from enum import Enum
+from typing import TypeVar
+
 from pydantic import BaseModel, Field
-from typing import Generic, TypeVar
 
 DataT = TypeVar("DataT")
 CursorT = TypeVar("CursorT")
 
 
-class CursorPaginationMeta(BaseModel, Generic[CursorT]):
+class CursorPaginationMeta[CursorT](BaseModel):
     """Pagination metadata for a cursor-paginated response.
 
     Attributes:
@@ -20,7 +21,7 @@ class CursorPaginationMeta(BaseModel, Generic[CursorT]):
     has_next: bool
 
 
-class CursorPaginatedResponse(BaseModel, Generic[DataT, CursorT]):
+class CursorPaginatedResponse[DataT, CursorT](BaseModel):
     """A single page of results plus its pagination metadata."""
     data: list[DataT] = Field(default_factory=list)
     pagination: CursorPaginationMeta[CursorT]

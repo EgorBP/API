@@ -1,9 +1,10 @@
 from typing import Final
-from sqlalchemy import select, func, distinct
+
+from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repositories import _BaseRepository
 from app.models import User, UserGifTag
+from app.repositories import _BaseRepository
 
 
 class UserRepository(_BaseRepository[User]):
@@ -29,17 +30,21 @@ class UserRepository(_BaseRepository[User]):
             self,
             tg_id: int,
     ) -> _model:
-        """Creates a user, or returns the existing one if already registered.
+        """Creates a user.
 
-        Thin wrapper around `create_one`. If a `User` row with this
-        `tg_id` already exists (unique constraint), the conflict is
-        resolved by returning the existing row rather than raising.
+        Thin wrapper around `create_one`. Does not check for an existing
+        user with the same `tg_id` first — callers that need idempotent
+        creation are responsible for catching the conflict themselves.
 
         Args:
             tg_id: Telegram ID of the user.
 
         Returns:
-            The inserted or already-existing `User` row.
+            The inserted `User` row.
+
+        Raises:
+            IntegrityError: If a `User` with this `tg_id` already exists
+                (unique constraint).
         """
         return await self.create_one({
             User.tg_id: tg_id

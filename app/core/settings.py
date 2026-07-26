@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -50,7 +51,7 @@ class Settings(BaseSettings):
     MEDIA_DIR: Path = BASE_DIR / "media" / "gifs"
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file="envs/.env",
         extra="ignore"
     )
 

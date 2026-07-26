@@ -1,6 +1,7 @@
+import logging
+
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
-import logging
 
 from app.core.exceptions import UserNotFoundError
 from app.models import User, UserStatus
@@ -386,8 +387,9 @@ class UserService:
         
         if user_status is not None:
             logger.debug(
-                "Get user status from cache",
+                "Get user status",
                 extra={
+                    "source": "cache",
                     "user_id": user_id,
                 }
             )
@@ -450,8 +452,9 @@ class UserService:
         
         if user_id is not None:
             logger.debug(
-                "Get user_id from cache",
+                "Get user_id",
                 extra={
+                    "source": "cache",
                     "user_id": user_id,
                 }
             )

@@ -1,12 +1,12 @@
-import jwt
-from fastapi import Security, HTTPException, status, Depends
-from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 import logging
 
-from app.services.user import UserService
+import jwt
+from fastapi import Depends, HTTPException, Security, status
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
+
 from app import settings
 from app.api.dependencies.service import get_user_service
-
+from app.services.user import UserService
 
 logger = logging.getLogger("app.auth")
 api_key_header = APIKeyHeader(name="X-Secret-Key", auto_error=True)

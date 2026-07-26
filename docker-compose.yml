@@ -11,6 +11,8 @@ services:
       - envs/.env
       - envs/.env.docker
     depends_on:
+      migration:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:

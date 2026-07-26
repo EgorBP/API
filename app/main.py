@@ -7,12 +7,12 @@ Uvicorn/Gunicorn as configured in the Dockerfile.
 """
 
 from fastapi import FastAPI
+
 from app.api import api_router
-from app.core.lifespan import lifespan
-from app.core.logging.config import setup_logging
 from app.api.exception_handlers import AppExceptionHandlers
 from app.api.middleware import ASGIRequestLoggingMiddleware
-
+from app.core.lifespan import lifespan
+from app.core.logging.config import setup_logging
 
 setup_logging()
 
@@ -26,8 +26,3 @@ AppExceptionHandlers().register(app)
 app.add_middleware(ASGIRequestLoggingMiddleware)
 
 app.include_router(api_router)
-
-# TODO:
-"""
-тесты
-"""

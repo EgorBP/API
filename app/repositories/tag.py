@@ -1,8 +1,9 @@
 from typing import Final
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models import Tag, UserGifTag
 from app.repositories import _BaseRepository
 
@@ -31,18 +32,21 @@ class TagRepository(_BaseRepository[Tag]):
             self,
             tag: str,
     ) -> _model:
-        """Creates a tag, or returns the existing one if it already exists.
+        """Creates a tag.
 
-        Thin wrapper around `create_one`. If a `Tag` row with this exact
-        text already exists (unique constraint on `Tag.tag`), the
-        conflict is resolved by returning the existing row rather than
-        raising.
+        Thin wrapper around `create_one`. Does not check for an existing
+        tag with the same text first — callers that need idempotent
+        creation are responsible for catching the conflict themselves.
 
         Args:
             tag: The tag's text value.
 
         Returns:
-            The inserted or already-existing `Tag` row.
+            The inserted `Tag` row.
+
+        Raises:
+            IntegrityError: If a `Tag` with this exact text already
+                exists (unique constraint on `Tag.tag`).
         """
         return await self.create_one({
             Tag.tag: tag

@@ -1,6 +1,7 @@
+import logging
+
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
-import logging
 
 from app.repositories import TagRepository
 from app.schemas.tag import PopularTagsOut, RawTagsOut

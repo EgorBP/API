@@ -1,6 +1,7 @@
+import logging
+
 from fastapi import Depends, HTTPException, Request
 from starlette import status
-import logging
 
 from app.api.dependencies.service import get_user_service
 from app.services.user import UserService

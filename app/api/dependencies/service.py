@@ -1,12 +1,12 @@
 """FastAPI dependencies that construct request-scoped service instances."""
 
+from fastapi import Depends
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends
 
 from app.core.database import get_db
-from app.services import UserLibraryService
 from app.core.redis import get_redis
+from app.services import UserLibraryService
 from app.services.auth import AuthService
 from app.services.gif import GifService
 from app.services.storage import LocalStorageProvider

@@ -1,14 +1,15 @@
+from collections.abc import Sequence
+from typing import Any, Final, Literal, overload
+
+from sqlalchemy import Row, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.repositories import _BaseRepository
-from app.models import UserGifTag
 from sqlalchemy.orm.attributes import InstrumentedAttribute
-from typing import Sequence, Final, overload, Literal
-from sqlalchemy import select, Row, delete
-from typing import TypeAlias, Any
-from app.models import User, Gif, Tag
+
+from app.models import Gif, Tag, User, UserGifTag
+from app.repositories import _BaseRepository
 from app.utils import get_orm_columns
 
-JoinModel: TypeAlias = type[User | Gif | Tag]
+type JoinModel = type[User | Gif | Tag]
 
 
 class UserGifTagRepository(_BaseRepository[UserGifTag]):
@@ -37,12 +38,11 @@ class UserGifTagRepository(_BaseRepository[UserGifTag]):
             gif_id: int,
             tag_id: int,
     ) -> _model:
-        """Links a user, a GIF, and a tag, or returns the existing link.
+        """Links a user, a GIF, and a tag.
 
-        Thin wrapper around `create_one`. If this exact
-        `(user_id, gif_id, tag_id)` combination already exists (unique
-        constraint), the conflict is resolved by returning the existing
-        row rather than raising.
+        Thin wrapper around `create_one`. Does not check for an existing
+        identical link first — callers that need idempotent creation are
+        responsible for catching the conflict themselves.
 
         Args:
             user_id: Internal ID of the user.
@@ -50,7 +50,11 @@ class UserGifTagRepository(_BaseRepository[UserGifTag]):
             tag_id: Internal ID of the tag.
 
         Returns:
-            The inserted or already-existing `UserGifTag` row.
+            The inserted `UserGifTag` row.
+
+        Raises:
+            IntegrityError: If this exact `(user_id, gif_id, tag_id)`
+                combination already exists (unique constraint).
         """
         return await self.create_one({
             UserGifTag.user_id: user_id,
