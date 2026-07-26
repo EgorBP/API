@@ -1,5 +1,6 @@
 import asyncio
 import logging
+
 from redis.asyncio import Redis
 
 from app.core.database import AsyncSessionLocal

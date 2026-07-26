@@ -2,9 +2,12 @@ from fastapi import APIRouter, Depends, status
 
 from app.api.dependencies.auth import get_user_id_from_jwt
 from app.api.dependencies.service import get_auth_service
-from app.schemas.auth import TelegramAuthSchema, TokenResponseSchema, RefreshTokenRequestSchema
+from app.schemas.auth import (
+    RefreshTokenRequestSchema,
+    TelegramAuthSchema,
+    TokenResponseSchema,
+)
 from app.services.auth import AuthService
-
 
 router = APIRouter()
 

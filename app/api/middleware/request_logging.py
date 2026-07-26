@@ -1,7 +1,8 @@
-import time
 import logging
-from starlette.types import ASGIApp, Scope, Receive, Send
+import time
+
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 
 class ASGIRequestLoggingMiddleware:

@@ -43,6 +43,8 @@ dependencies = [
     "python-multipart>=0.0.32",
     "pyjwt[crypto]>=2.13.0",
     "bcrypt>=5.0.0",
+    "testcontainers[postgres,redis]>=4.15.0",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.pytest.ini_options]

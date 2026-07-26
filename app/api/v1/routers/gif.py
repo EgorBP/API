@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from app.api.dependencies.service import get_gif_service, get_tag_service
 from app.schemas.common import CursorPaginatedResponse, SortOrder
 from app.schemas.gif import PopularGifsOut, RawGifOut
-from app.schemas.tag import RawTagsOut, TagString
+from app.schemas.tag import RawTagsOut
 from app.services.gif import GifService
 from app.services.tag import TagService
 

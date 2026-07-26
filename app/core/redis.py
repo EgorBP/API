@@ -1,5 +1,6 @@
-from redis.asyncio import ConnectionPool, Redis
 from fastapi import Request
+from redis.asyncio import ConnectionPool, Redis
+
 from app import settings
 
 

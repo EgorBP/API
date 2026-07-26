@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, UploadFile, Form, status, Body
+from fastapi import APIRouter, Body, Depends, Form, Query, UploadFile, status
 
 from app.api.dependencies.auth import get_user_id_from_jwt
 from app.api.dependencies.service import get_user_library_service, get_user_service
@@ -133,7 +133,7 @@ async def upload_new_gif(
 @router.put(
     '/gifs/{gif_id}/tags', 
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Replace tags on one of the authenticated user's GIFs",
+    summary="Replace tags on one of the authenticated user's GIFs or connect exists GIF to user",
     responses={
         status.HTTP_404_NOT_FOUND: {
             "description": "No GIF exists with the given `gif_id`.",
@@ -149,6 +149,7 @@ async def update_gif_tags(
     """Replaces the authenticated user's complete tag set on one of their GIFs.
 
     ### Notes:
+    - If GIF ID exist in database it adds GIF to user
     - `tags` is treated as the **full replacement set** — tags not
       included are removed, new ones are created if needed.
     - At least one tag is required (`min_length=1`).

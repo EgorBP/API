@@ -7,17 +7,23 @@ instead of re-saving identical files, and keeping each user's tag set on
 a GIF in sync with what they submitted.
 """
 
-from fastapi import UploadFile
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Sequence
-from redis.asyncio import Redis
 import logging
+from collections.abc import Sequence
+
+from fastapi import UploadFile
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import GifNotFoundError
-from app.models import UserGifTag, Gif
+from app.models import Gif, UserGifTag
+from app.repositories import (
+    GifRepository,
+    TagRepository,
+    UserGifTagRepository,
+    UserRepository,
+)
 from app.schemas.common import CursorPaginatedResponse, CursorPaginationMeta
 from app.schemas.gif import GifOut
-from app.repositories import UserGifTagRepository, TagRepository, GifRepository, UserRepository
 from app.schemas.tag import RawTagsOut
 from app.services.interface import StorageProvider
 from app.services.user import UserService
@@ -147,13 +153,13 @@ class UserLibraryService:
         cached_data = await self._redis.get(cache_key)
         if cached_data:
             logger.info(
-                "Get user gifs with tags from cache",
+                "Get user gifs with tags",
                 extra={
-                    "source": "database",
+                    "source": "cache",
                     "user_id": user_id,
                 }
             )
-            return CursorPaginatedResponse.model_validate_json(cached_data)
+            return CursorPaginatedResponse[GifOut, int].model_validate_json(cached_data)
         
         rows = await gif_repo.search_user_gifs_with_tags(
             user_id=user_id,
@@ -162,14 +168,10 @@ class UserLibraryService:
             cursor=cursor,
             limit=limit + 1
         )
-        
-        has_next = len(rows) > limit
 
-        if has_next:
-            rows = rows[:limit]
-            next_cursor = rows[-1].id
-        else:
-            next_cursor = None
+        has_next = len(rows) > limit
+        rows = rows[:limit] if has_next else rows
+        next_cursor = rows[-1].id if rows else None
         
         gifs_data = [
             GifOut.model_validate(row._mapping)
@@ -194,7 +196,7 @@ class UserLibraryService:
             }
         )
         logger.info(
-            "Get user gifs with tags from database",
+            "Get user gifs with tags",
             extra={
                 "source": "database",
                 "user_id": user_id,
@@ -222,7 +224,7 @@ class UserLibraryService:
         cached_data = await self._redis.get(cache_key)
         if cached_data:
             logger.info(
-                "Get all user tags from cache",
+                "Get all user tags",
                 extra={
                     "source": "cache",
                     "user_id": user_id,
@@ -246,7 +248,7 @@ class UserLibraryService:
             }
         )
         logger.info(
-            "Get all user tags from database",
+            "Get all user tags",
             extra={
                 "source": "database",
                 "user_id": user_id,

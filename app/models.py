@@ -1,11 +1,11 @@
 from enum import Enum
-from sqlalchemy import String, Integer, BigInteger, ForeignKey
+
+from sqlalchemy import BigInteger, ForeignKey, Integer, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
     """Common declarative base class for all ORM models in the project."""
-    pass
 
 
 class User(Base):

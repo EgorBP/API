@@ -1,6 +1,7 @@
 import asyncio
-from redis.asyncio import Redis
 import logging
+
+from redis.asyncio import Redis
 
 from app.core.database import AsyncSessionLocal
 from app.repositories import GifRepository

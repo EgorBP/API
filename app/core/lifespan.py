@@ -1,9 +1,10 @@
 import asyncio
-from contextlib import asynccontextmanager
-from app.core.redis import create_redis_client, close_redis_client
-from fastapi import FastAPI
 import logging
+from contextlib import asynccontextmanager
 
+from fastapi import FastAPI
+
+from app.core.redis import close_redis_client, create_redis_client
 from app.tasks.gif import recalculate_popular_gifs_loop
 from app.tasks.tag import recalculate_popular_tags_loop
 

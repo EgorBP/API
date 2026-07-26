@@ -1,4 +1,4 @@
-from fastapi import HTTPException, UploadFile, File
+from fastapi import File, HTTPException, UploadFile
 
 
 async def validate_gif_file(

@@ -6,20 +6,23 @@ here rather than writing its own CRUD boilerplate. Model-specific
 repositories only add operations that don't fit the generic filter-based
 shape (e.g. `GifRepository.search_gifs_by_tags`).
 """
+from collections.abc import Iterable, Sequence
+from typing import Any, Literal, overload
 
+from sqlalchemy import Delete, Row, Select, Update, delete, select, update
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, Row, Select, Update, Delete, Insert
-from app.utils import is_valid_column_for_model, get_orm_columns, validate_columns_for_model
+from sqlalchemy.orm.attributes import InstrumentedAttribute
+
 from app.models import Base
-from typing import Sequence, Any, overload, Literal
-from typing import TypeVar, Generic
+from app.utils import (
+    get_orm_columns,
+    is_valid_column_for_model,
+    validate_columns_for_model,
+)
 
-T = TypeVar("T", bound=Base)
 
-
-class _BaseRepository(Generic[T]):
+class _BaseRepository[T: Base]:
     """Generic async base repository bound to a single SQLAlchemy ORM model.
 
     Encapsulates common persistence operations: conflict-aware inserts
@@ -425,39 +428,49 @@ class _BaseRepository(Generic[T]):
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    def _add_filters_to_stmt[T_stmt: Select | Update | Delete | Insert](
+    def _add_filters_to_stmt[T_stmt: Select | Update | Delete](
             self,
             stmt: T_stmt,
-            filters: dict[InstrumentedAttribute, Sequence[Any] | Any],
+            filters: dict[InstrumentedAttribute, Any],
     ) -> T_stmt:
         """Applies WHERE conditions from `filters` to a statement.
 
-        A filter value that is a list/tuple/set is matched with ``IN``;
-        any other value is matched with ``==``.
+        Filter values that are collections (list, tuple, set) are matched using ``IN``;
+        strings, bytes, and scalar values are matched using ``==``.
 
         Args:
-            stmt: The `Select`, `Update`, `Delete`, or `Insert` statement
-                to add conditions to.
-            filters: Mapping of column to value(s) to filter by.
+            stmt: The `Select`, `Update`, `Delete` statement to filter.
+            filters: Mapping of column to scalar value or collection of values.
 
         Returns:
-            The same statement with the corresponding WHERE clauses added.
+            The statement with applied WHERE conditions.
 
         Raises:
-            ValueError: If a key in `filters` is not a column of the bound
-                model.
+            ValueError: If a filter key is not a column of the bound model,
+                or if `stmt` does not support WHERE clauses (e.g. standard Insert).
         """
+        if filters and not hasattr(stmt, "where"):
+            raise ValueError(f"Statement type {type(stmt).__name__} does not support WHERE clauses.")
+
         for column, values in filters.items():
             if not is_valid_column_for_model(column, self._model):
-                raise ValueError(f"Expected a column of model {self._model.__name__} as a filter key. "
-                                 f"Got {type(column)}: {column}.")
-            if not isinstance(values, (list, tuple, set)):
-                stmt = stmt.where(column == values)
-            else:
+                raise ValueError(
+                    f"Expected a column of model {self._model.__name__} as a filter key. "
+                    f"Got {type(column)}: {column}."
+                )
+
+            is_collection = (
+                    isinstance(values, (list, tuple, set))
+                    or (isinstance(values, Iterable) and not isinstance(values, (str, bytes)))
+            )
+
+            if is_collection:
                 stmt = stmt.where(column.in_(values))
+            else:
+                stmt = stmt.where(column == values)
 
         return stmt
-
+    
     def _build_get_stmt(
             self,
             columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute | None = None,

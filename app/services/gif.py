@@ -1,9 +1,10 @@
-from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.repositories import GifRepository
-from app.schemas.common import SortOrder, CursorPaginatedResponse, CursorPaginationMeta
+from app.schemas.common import CursorPaginatedResponse, CursorPaginationMeta, SortOrder
 from app.schemas.gif import PopularGifsOut, RawGifOut
 
 logger = logging.getLogger(__name__)
@@ -89,7 +90,7 @@ class GifService:
             if not tags:
                 cache_key = f"gifs:{sorting.value}:tags:all:limit:{limit}"
             elif len(tags) == 1: 
-                cache_key = f"gifs:{sorting.value}:tags:{tags}:limit:{limit}"
+                cache_key = f"gifs:{sorting.value}:tags:{tags!s}:limit:{limit}"
             
             if cache_key is not None:
                 gifs = await self._redis.get(cache_key)
@@ -101,7 +102,7 @@ class GifService:
                             "source": "cache"
                         }
                     )
-                    return CursorPaginatedResponse.model_validate_json(gifs)
+                    return CursorPaginatedResponse[RawGifOut, int].model_validate_json(gifs)
         
         gif_repo = GifRepository(self._session)
         
@@ -113,13 +114,9 @@ class GifService:
         )
 
         has_next = len(gifs) > limit
-
-        if has_next:
-            rows = gifs[:limit]
-            next_cursor = rows[-1].id
-        else:
-            next_cursor = None
-
+        gifs = gifs[:limit] if has_next else gifs
+        next_cursor = gifs[-1].id if gifs else None
+        
         gifs_data = [
             RawGifOut.model_validate(gif._mapping)
             for gif in gifs

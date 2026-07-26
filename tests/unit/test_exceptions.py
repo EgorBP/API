@@ -1,7 +1,8 @@
 import pytest
 from fastapi import FastAPI
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
+
 from app.api.exception_handlers import AppExceptionHandlers
 
 

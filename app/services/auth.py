@@ -1,15 +1,19 @@
-import jwt
 import logging
 from datetime import timedelta
+
+import jwt
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import InvalidCredentialsError
+from app.core.settings import settings
 from app.schemas.auth import TelegramAuthSchema, TokenResponseSchema
 from app.services.user import UserService
-from app.utils.auth import verify_telegram_widget_data, create_access_token, create_refresh_token
-from app.core.settings import settings
-from app.core.exceptions import InvalidCredentialsError
-
+from app.utils.auth import (
+    create_access_token,
+    create_refresh_token,
+    verify_telegram_widget_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +47,8 @@ class AuthService:
         Verifies the widget's signature and freshness, resolves the
         Telegram user to an internal user (creating one if this is their
         first login), issues a new access/refresh token pair, and stores
-        the refresh token in Redis, overwriting any previous one for this
-        user.
+        the refresh token's `jti` in Redis, overwriting any previous one
+        for this user.
 
         Args:
             auth_data: The data returned by the Telegram Login Widget.
@@ -71,14 +75,14 @@ class AuthService:
             data={"sub": str(user_id)},
         )
 
-        refresh_token_expires = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-        refresh_token = create_refresh_token(
+        refresh_token, jti = create_refresh_token(
             data={"sub": str(user_id)},
         )
-
+        
+        refresh_token_expires = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
         await self._redis.set(
-            name=self._get_refresh_token_path(user_id),
-            value=refresh_token,
+            name=self._get_refresh_token_jti_key(user_id),
+            value=jti,
             ex=refresh_token_expires
         )
 
@@ -102,10 +106,10 @@ class AuthService:
     ) -> TokenResponseSchema:
         """Exchanges a valid refresh token for a new access/refresh pair.
 
-        Validates the token's signature, type, and expiry, then checks it
-        against the single refresh token stored in Redis for that user —
-        this makes each refresh token single-use and invalidates any
-        older one still floating around (e.g. from a previous device).
+        Validates the token's signature, type, and expiry, then checks
+        its `jti` against the one stored in Redis for that user — this
+        makes each refresh token single-use and invalidates any older
+        one still floating around (e.g. from a previous device).
 
         Args:
             refresh_token: The refresh token to exchange.
@@ -115,8 +119,9 @@ class AuthService:
 
         Raises:
             InvalidCredentialsError: If the token is malformed, expired,
-                not of type "refresh", or does not match the token
-                currently stored for that user in Redis.
+                not of type "refresh", has no `jti` claim, or its `jti`
+                does not match the one currently stored for that user in
+                Redis.
         """
         try:
             payload = jwt.decode(
@@ -126,33 +131,34 @@ class AuthService:
             )
             user_id: str = payload.get("sub")
             token_type: str = payload.get("type")
+            incoming_jti: str = payload.get("jti")
 
-            if not user_id or token_type != "refresh":
+            if not user_id or token_type != "refresh" or not incoming_jti:
                 raise InvalidCredentialsError()
-
+            
         except jwt.PyJWTError:
             raise InvalidCredentialsError()
 
-        saved_token = await self._redis.get(self._get_refresh_token_path(user_id))
+        saved_jti = await self._redis.get(self._get_refresh_token_jti_key(user_id))
 
-        if isinstance(saved_token, bytes):
-            saved_token = saved_token.decode("utf-8")
+        if isinstance(saved_jti, bytes):
+            saved_jti = saved_jti.decode("utf-8")
 
-        if not saved_token or saved_token != refresh_token:
+        if not saved_jti or saved_jti != incoming_jti:
             raise InvalidCredentialsError()
 
         new_access_token = create_access_token(
             data={"sub": user_id},
         )
 
-        new_refresh_token = create_refresh_token(
+        new_refresh_token, new_jti = create_refresh_token(
             data={"sub": user_id},
         )
-
+        
         refresh_token_expires = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
         await self._redis.set(
-            name=self._get_refresh_token_path(user_id),
-            value=new_refresh_token,
+            name=self._get_refresh_token_jti_key(user_id),
+            value=new_jti,
             ex=refresh_token_expires
         )
 
@@ -173,15 +179,15 @@ class AuthService:
             self, 
             user_id: int
     ) -> None:
-        """Logs a user out by invalidating their stored refresh token.
+        """Logs a user out by invalidating their stored refresh token jti.
 
-        The corresponding access token, if still unexpired, remains valid
+        The corresponding access token jti, if still unexpired, remains valid
         until it naturally expires — logout only prevents future refreshes.
 
         Args:
             user_id: Internal ID of the user to log out.
         """
-        await self._redis.delete(self._get_refresh_token_path(user_id))
+        await self._redis.delete(self._get_refresh_token_jti_key(user_id))
         
         logger.info(
             "User logged",
@@ -191,15 +197,15 @@ class AuthService:
         )
         
     @staticmethod
-    def _get_refresh_token_path(
+    def _get_refresh_token_jti_key(
             user_id: int | str
     ) -> str:
-        """Builds the Redis key under which a user's refresh token is stored.
+        """Builds the Redis key under which a user's refresh token JTI is stored.
 
         Args:
             user_id: Internal ID of the user.
 
         Returns:
-            The Redis key, e.g. ``"refresh_token:42"``.
+            The Redis key, e.g. ``"refresh_token_jti:42"``.
         """
-        return f"refresh_token:{user_id}"
+        return f"refresh_token_jti:{user_id}"

@@ -1,6 +1,8 @@
-from typing import Iterable
+from collections.abc import Iterable
+
 from sqlalchemy import inspect
 from sqlalchemy.orm.attributes import InstrumentedAttribute
+
 from app.models import Base
 
 
