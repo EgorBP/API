@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.repositories import _BaseCRUD
+from app.repositories import _BaseRepository
 from app.models import UserGifTag
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from typing import Sequence, Final, overload, Literal
@@ -11,12 +11,12 @@ from app.utils import get_orm_columns
 JoinModel: TypeAlias = type[User | Gif | Tag]
 
 
-class UserGifTagRepository(_BaseCRUD[UserGifTag]):
-    """
-    CRUD для модели UserGifTag.
+class UserGifTagRepository(_BaseRepository[UserGifTag]):
+    """CRUD operations for the `UserGifTag` association model.
 
-    Переопределяется только логика создания связи.
-    Остальные операции наследуются от BaseCRUD.    
+    Only `create_user_gif_tag` and read/delete helpers specific to this
+    association are added here; generic get/update operations are
+    inherited from `_BaseRepository`.
     """
     _model: Final = UserGifTag
 
@@ -24,6 +24,11 @@ class UserGifTagRepository(_BaseCRUD[UserGifTag]):
             self, 
             session: AsyncSession
     ):
+        """Initializes the repository.
+
+        Args:
+            session: The async SQLAlchemy session to execute queries on.
+        """
         super().__init__(session)
 
     async def create_user_gif_tag(
@@ -32,15 +37,20 @@ class UserGifTagRepository(_BaseCRUD[UserGifTag]):
             gif_id: int,
             tag_id: int,
     ) -> _model:
-        """
-        Создаёт связь между пользователем, гифкой и тегом
-        или возвращает существующую.
+        """Links a user, a GIF, and a tag, or returns the existing link.
 
-        При конфликте по уникальному ограничению
-        (user_id, gif_id, tag_id) новая запись не создаётся,
-        а возвращается существующая строка.
+        Thin wrapper around `create_one`. If this exact
+        `(user_id, gif_id, tag_id)` combination already exists (unique
+        constraint), the conflict is resolved by returning the existing
+        row rather than raising.
 
-        :return: Row с колонками модели UserGifTag.
+        Args:
+            user_id: Internal ID of the user.
+            gif_id: Internal ID of the GIF.
+            tag_id: Internal ID of the tag.
+
+        Returns:
+            The inserted or already-existing `UserGifTag` row.
         """
         return await self.create_one({
             UserGifTag.user_id: user_id,
@@ -75,16 +85,48 @@ class UserGifTagRepository(_BaseCRUD[UserGifTag]):
             join_models: Sequence[JoinModel] | JoinModel | None = None,
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
     ) ->  list[Row[tuple[Any]]] | list[Any]:
-        """
-        Метод получения записей из таблицы `UserGifTag` с фильтрацией по колонкам 
-        и возможностью сделать inner join возможных таблиц.
-        
-        :param columns: Колонки для возврата. Если None — вернутся базовые колонки таблицы `UserGifTag`.
-        :param join_models: Таблицы с которыми будет выполнен inner join. Если None — игнорируется.
-        :param filters: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
-                       а value — значение для фильтрации.
-        :param scalars: Будет ли применен scalars() к результату.
-        :return: Список объектов с выбранными колонками.
+        """Fetches `UserGifTag` rows, optionally joined with related tables.
+
+        Unlike the generic `get_many`, this allows joining `User`, `Gif`,
+        and/or `Tag` so both `columns` and `filters` can reference fields
+        from those tables too (e.g. `Tag.tag`), not just from
+        `UserGifTag` itself. Filter validation here only checks that a
+        key is an `InstrumentedAttribute` — it does not require the
+        column to belong to `UserGifTag` or to a model listed in
+        `join_models`, so it is the caller's responsibility to only
+        filter on columns that are actually joined into the statement.
+
+        Args:
+            columns: Column(s) to select, from `UserGifTag` or any model
+                listed in `join_models`.
+            scalars: If True, unwraps each result row to its single
+                column value instead of returning a `Row`. Only makes
+                sense when `columns` is a single column.
+            join_models: Related model(s) to inner-join in, so their
+                columns become selectable/filterable.
+            filters: Mapping of column to value(s) to filter by. A value
+                that is a list/tuple/set is matched with ``IN``; any
+                other value is wrapped in a single-item tuple and also
+                matched with ``IN``.
+
+        Returns:
+            A list of `Row` objects containing the requested columns, or
+            a list of scalar values if `scalars` is True.
+
+        Raises:
+            ValueError: If a key in `filters` is not an
+                `InstrumentedAttribute` at all.
+
+        Example:
+            Fetching the tag text for every tag a user has applied to a
+            specific GIF::
+
+                rows = await ugt_repo.get_many_with_join(
+                    columns=Tag.tag,
+                    join_models=Tag,
+                    filters={UserGifTag.user_id: 1, UserGifTag.gif_id: 2},
+                    scalars=True,
+                )
         """
         if isinstance(columns, InstrumentedAttribute):
             columns = (columns,)
@@ -109,8 +151,8 @@ class UserGifTagRepository(_BaseCRUD[UserGifTag]):
         if filters:
             for column, values in filters.items():
                 if not isinstance(column, InstrumentedAttribute):
-                    raise ValueError(f"В ключе для фильтрации ожидается колонка модели. "
-                                     f"Вы передали {type(column)}, а именно {column}.")
+                    raise ValueError(f"Expected a model column as a filter key. "
+                                     f"Got {type(column)}: {column}.")
                 if not isinstance(values, (list, tuple, set)):
                     values = (values,)
 
@@ -127,6 +169,18 @@ class UserGifTagRepository(_BaseCRUD[UserGifTag]):
             gif_id: int,
             keep_tag_ids: set[int],
     ) -> None:
+        """Removes a user's tags from a GIF, keeping only the given ones.
+
+        Used when replacing a GIF's tag set: rather than deleting
+        everything and re-inserting, this deletes only the links whose
+        tag is not in `keep_tag_ids`, leaving links to tags that should
+        remain untouched.
+
+        Args:
+            user_id: Internal ID of the user.
+            gif_id: Internal ID of the GIF.
+            keep_tag_ids: Tag IDs that should NOT be deleted.
+        """
         stmt = delete(self._model).where(
             UserGifTag.user_id == user_id,
             UserGifTag.gif_id == gif_id,

@@ -7,13 +7,32 @@ import jwt
 from app import settings
 
 
-# TODO: 
 def verify_telegram_widget_data(
         data: dict, 
         bot_token: str
 ) -> bool:
-    """
-    Проверяет валидность данных, полученных от Telegram Login Widget.
+    """Verifies the authenticity and freshness of Telegram Login Widget data.
+
+    Recomputes the HMAC-SHA256 signature Telegram specifies for widget
+    data (all fields except `hash`, sorted and joined as
+    ``"key=value"`` lines, signed with SHA256(bot_token) as the key) and
+    compares it to `data["hash"]` in constant time. Also rejects data
+    whose `auth_date` is more than 24 hours old.
+
+    Args:
+        data: The widget's data, including `hash` and `auth_date`.
+        bot_token: The bot's token, used to derive the HMAC secret key.
+
+    Returns:
+        True if the signature is valid and `auth_date` is within the last
+        24 hours, False otherwise (including when `hash` is missing).
+
+    Example:
+        Validating data just received from the widget before creating a
+        session for the user::
+
+            if not verify_telegram_widget_data(widget_data, settings.BOT_TOKEN):
+                raise InvalidCredentialsError()
     """
     check_hash: str = data.get("hash")
     if not check_hash:
@@ -50,7 +69,19 @@ def create_access_token(
         algorithm: str = settings.JWT_ALGORITHM,
         expires_delta: timedelta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 ) -> str:
-    """Создает JWT токен."""
+    """Creates a signed JWT access token.
+
+    Adds `exp` and `type: "access"` claims to `data` before signing.
+
+    Args:
+        data: Claims to encode into the token, e.g. ``{"sub": str(user_id)}``.
+        secret_key: Key used to sign the token.
+        algorithm: JWT signing algorithm.
+        expires_delta: How long the token remains valid for.
+
+    Returns:
+        The encoded JWT.
+    """
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + expires_delta
     to_encode.update({"exp": expire, "type": "access"})
@@ -64,6 +95,22 @@ def create_refresh_token(
         algorithm: str = settings.JWT_ALGORITHM,
         expires_delta: timedelta = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 ) -> str:
+    """Creates a signed JWT refresh token.
+
+    Adds `exp` and `type: "refresh"` claims to `data` before signing.
+    Unlike an access token, a refresh token is only valid if it also
+    matches the one currently stored for that user in Redis (see
+    `AuthService`).
+
+    Args:
+        data: Claims to encode into the token, e.g. ``{"sub": str(user_id)}``.
+        secret_key: Key used to sign the token.
+        algorithm: JWT signing algorithm.
+        expires_delta: How long the token remains valid for.
+
+    Returns:
+        The encoded JWT.
+    """
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + expires_delta
     to_encode.update({"exp": expire, "type": "refresh"})

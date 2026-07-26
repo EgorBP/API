@@ -1,21 +1,16 @@
-from typing import Final, Sequence, Any
-
-from sqlalchemy import select, func
+from typing import Final
+from sqlalchemy import select, func, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import InstrumentedAttribute
 
-from app.repositories import _BaseCRUD
-from app.models import User, UserGifTag, Gif
-from app.repositories.base import T
+from app.repositories import _BaseRepository
+from app.models import User, UserGifTag
 
 
-# TODO
-class UserRepository(_BaseCRUD[User]):
-    """
-    CRUD для модели User.
+class UserRepository(_BaseRepository[User]):
+    """CRUD operations for the `User` model.
 
-    Переопределяется только логика создания пользователя.
-    Остальные операции наследуются от BaseCRUD.
+    Only `create_user` and read helpers specific to users are added here;
+    generic get/update operations are inherited from `_BaseRepository`.
     """
     _model: Final = User
 
@@ -23,27 +18,28 @@ class UserRepository(_BaseCRUD[User]):
             self, 
             session: AsyncSession
     ):
+        """Initializes the repository.
+
+        Args:
+            session: The async SQLAlchemy session to execute queries on.
+        """
         super().__init__(session)
 
     async def create_user(
             self,
             tg_id: int,
     ) -> _model:
-        """
-        Создаёт нового пользователя в базе данных или возвращает существующего.
+        """Creates a user, or returns the existing one if already registered.
 
-        Метод является обёрткой над универсальным методом `create_instance`
-        базового класса `_BaseCRUD`.
+        Thin wrapper around `create_one`. If a `User` row with this
+        `tg_id` already exists (unique constraint), the conflict is
+        resolved by returning the existing row rather than raising.
 
-        Если в таблице `users` уже существует запись с таким `tg_id`
-        (по уникальному ограничению), новая запись не создаётся,
-        а возвращается существующая.
+        Args:
+            tg_id: Telegram ID of the user.
 
-        В противном случае создаётся новый пользователь и возвращается
-        строка со значениями всех колонок модели `User`.
-
-        :param tg_id: Telegram ID пользователя.
-        :return: Row с колонками модели `User` после вставки или при конфликте.
+        Returns:
+            The inserted or already-existing `User` row.
         """
         return await self.create_one({
             User.tg_id: tg_id
@@ -53,6 +49,18 @@ class UserRepository(_BaseCRUD[User]):
             self,
             user_id: int
     ) -> _model | None:
+        """Deletes a user by internal ID.
+
+        Related `UserGifTag` rows are removed automatically via the
+        database's `ON DELETE CASCADE`.
+
+        Args:
+            user_id: Internal ID of the user to delete.
+
+        Returns:
+            The deleted `User` row, or None if no user with this ID
+            existed.
+        """
         user= await self.delete_many(
             filters={self._model.id: user_id}
         )
@@ -63,8 +71,21 @@ class UserRepository(_BaseCRUD[User]):
             self,
             user_id: int
     ) -> int:
+        """Counts how many distinct GIFs a user has in their library.
+
+        Counts distinct `Gif.id` values referenced by the user's
+        `UserGifTag` rows, so a GIF tagged with several tags is still
+        counted once.
+
+        Args:
+            user_id: Internal ID of the user.
+
+        Returns:
+            The number of distinct GIFs in the user's library, or 0 if
+            none.
+        """
         stmt = (
-            select(func.count(UserGifTag.gif_id))
+            select(func.count(distinct(UserGifTag.gif_id)))
             .select_from(UserGifTag)
             .where(UserGifTag.user_id == user_id)
         )

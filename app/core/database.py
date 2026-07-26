@@ -19,5 +19,14 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 async def get_db():
+    """Yields an async SQLAlchemy session for use as a FastAPI dependency.
+
+    The session is opened for the duration of a single request and closed
+    automatically afterwards. Commit and rollback are the caller's
+    responsibility.
+
+    Yields:
+        AsyncSession: An active database session bound to `engine`.
+    """
     async with AsyncSessionLocal() as db:
         yield db

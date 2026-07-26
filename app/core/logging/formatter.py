@@ -2,7 +2,28 @@ import logging
 
 
 class DetailedFormatter(logging.Formatter):
+    """Log formatter that appends structured context fields to each line.
+
+    Reads well-known optional attributes (`source`, `user_id`,
+    `tg_user_id`, `gif_id`) off the `LogRecord` — typically set via the
+    `extra` argument to the logging calls — and renders them as a
+    ``key=value`` list consumed by the `%(extra_fields)s` placeholder in
+    the format string. Fields that are absent or None are omitted.
+    
+    Example:
+        >>> logger.info("Get user info", extra={"user_id": 42, "source": "cache"})
+        2026-07-25 12:00:00 | INFO | app.services.user | user.py:get_user_info | source=cache | user_id=42 | Get user info
+    """
+
     def format(self, record):
+        """Formats a log record, injecting `record.extra_fields`.
+
+        Args:
+            record: The log record being formatted.
+
+        Returns:
+            The formatted log line.
+        """
         fields = []
 
         if hasattr(record, "source"):

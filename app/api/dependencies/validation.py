@@ -4,14 +4,21 @@ from fastapi import HTTPException, UploadFile, File
 async def validate_gif_file(
         file: UploadFile = File()
 ) -> UploadFile:
-    """
-    Зависимость для проверки, что загружаемый файл — это GIF.
-    
-    :param file: Объект загруженного файла от FastAPI.
-    :return: Исходный объект файла, если он успешно прошёл валидацию.
-    
-    :raises HTTPException: С кодом 400, если MIME-тип не равен 'image/gif'.
-    :raises HTTPException: С кодом 400, если заголовок файла не содержит сигнатуру 'GIF87a' или 'GIF89a'.
+    """FastAPI dependency validating an uploaded file is a genuine GIF or MP4.
+
+    Checks both the declared MIME type and the actual file header/magic
+    bytes, so a file with a spoofed `Content-Type` is still rejected.
+
+    Args:
+        file: The uploaded file.
+
+    Returns:
+        The same file object, with its read position reset to the start.
+
+    Raises:
+        HTTPException: 400, if the declared MIME type isn't
+            `image/gif` or `video/mp4`, or if the file's header doesn't
+            match the declared type.
     """
     ALLOWED_MIME_TYPES = {"image/gif", "video/mp4"}
 

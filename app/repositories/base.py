@@ -1,7 +1,16 @@
+"""Generic async repository base class shared by all model-specific repositories.
+
+Every repository in `app.repositories` (`UserRepository`, `GifRepository`,
+`TagRepository`, `UserGifTagRepository`) subclasses `_BaseRepository` from
+here rather than writing its own CRUD boilerplate. Model-specific
+repositories only add operations that don't fit the generic filter-based
+shape (e.g. `GifRepository.search_gifs_by_tags`).
+"""
+
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, inspect, Row, Select, Update, Delete, Insert
+from sqlalchemy import select, update, delete, Row, Select, Update, Delete, Insert
 from app.utils import is_valid_column_for_model, get_orm_columns, validate_columns_for_model
 from app.models import Base
 from typing import Sequence, Any, overload, Literal
@@ -10,49 +19,40 @@ from typing import TypeVar, Generic
 T = TypeVar("T", bound=Base)
 
 
-# TODO: update dockstring
-class _BaseCRUD(Generic[T]):
-    """
-    Базовый утилитный класс для выполнения типичных операций CRUD (Create, Read, Update, Delete)
-    над одной SQLAlchemy ORM-моделью в асинхронном контексте.
+class _BaseRepository(Generic[T]):
+    """Generic async base repository bound to a single SQLAlchemy ORM model.
 
-    Класс инкапсулирует часто используемые шаблоны запросов: вставку с обработкой конфликтов
-    (`create_instance`), выборку с универсальными фильтрами (`get_instances`), обновление одной
-    записи (`update_instance`) и удаление записей (`delete_instances`).
+    Encapsulates common persistence operations: conflict-aware inserts
+    (`create_one`, `create_many`), filtered reads (`get_many`, `get_one`
+    and their `*_orm` variants), single-row updates (`update_one`), and
+    filtered deletes (`delete_many`).
 
-    Важные моменты:
-        - Экземпляр класса привязывается к конкретной ORM-модели и асинхронной сессии:
-            - async_session: AsyncSession — асинхронная сессия SQLAlchemy.
-            - model: Subclass[Base] — класс ORM-модели.
-        - Во всех методах ожидается, что ключи словарей `values` и `filters` — это именно
-          колонковые атрибуты модели (InstrumentedAttribute). Перед выполнением запросов
-          производится валидация колонок.
-        - Методы выполняют SQL-запросы через `self.async_session.execute(...)`, но НЕ выполняют
-          `commit()` автоматически. За фиксацию транзакции (commit/rollback) отвечает вызывающий код.
-        - Возвращаемые значения типичны для асинхронного SQLAlchemy:
-            - `create_instance` / `update_instance` возвращают одну строку (Row) или None.
-            - `get_instances` возвращает список строк (List[Row]).
-            - `delete_instances` возвращает количество удалённых строк (int).
+    Subclasses set the `_model` class attribute to bind the repository to a
+    specific model, e.g. `_model: Final = Gif`.
 
-    Пример использования:
-    
-        repositories = _BaseCRUD(async_session=session, model=User)
-        
-        # вставка
-        
-        row = await repositories.create_instance({User.email: "a@example.com", User.name: "A"})
-        
-        # выборка
-        
-        rows = await repositories.get_instances(filters={User.is_active: True})
-        
-        # обновление
-        
-        updated = await repositories.update_instance(instance_id=1, values={User.name: "B"})
-        
-        # удаление
-        
-        deleted_count = await repositories.delete_instances(filters={User.id: [2, 3]})
+    Notes:
+        - Dictionary keys in `values` and `filters` arguments must be
+          column attributes of the bound model (`InstrumentedAttribute`,
+          e.g. `User.id`); they are validated before the query runs.
+        - Methods execute statements via the bound session but never call
+          `commit()`/`rollback()` themselves — that is the caller's
+          responsibility.
+        - `get_many`/`get_one` return SQLAlchemy `Row` objects containing
+          only the requested columns; the `*_orm` variants return full
+          ORM instances of the bound model.
+          
+    Example:
+        Assuming a subclass ``UserRepository(_BaseRepository[User])`` with
+        ``_model = User``::
+
+            repo = UserRepository(session)
+
+            row = await repo.create_one({User.tg_id: 123456})
+            rows = await repo.get_many(filters={User.id: [1, 2, 3]})
+            updated = await repo.update_one(
+                values={User.tg_id: 999}, filters={User.id: 1}
+            )
+            deleted = await repo.delete_many(filters={User.id: [2, 3]})
     """
     _model: type[T]
     
@@ -60,8 +60,10 @@ class _BaseCRUD(Generic[T]):
             self,
             session: AsyncSession,
     ):
-        """
-        :param session: Объект асинхронной сессии SQLAlchemy.
+        """Initializes the CRUD helper.
+
+        Args:
+            session: The async SQLAlchemy session to execute queries on.
         """
         self._session = session
     
@@ -86,11 +88,37 @@ class _BaseCRUD(Generic[T]):
             value: dict[InstrumentedAttribute, Any],
             ignore_conflicts: bool = False,
     ) -> T | None:
-        """
+        """Inserts a single row for the bound ORM model.
 
-        :param value: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
-                       а value — значение для вставки.
-        :return: Строка результата (Row), содержащая значения всех колонок модели после операции. 
+        Builds and executes an ``INSERT ... RETURNING`` statement. Column
+        keys in `value` are validated against the bound model before the
+        query is executed, so passing a column from an unrelated model
+        fails fast instead of producing a malformed query.
+
+        Args:
+            value: Mapping of model column to the value to insert, e.g.
+                ``{User.tg_id: 123456}``.
+            ignore_conflicts: If True, adds ``ON CONFLICT DO NOTHING`` so a
+                unique or primary-key violation is skipped instead of
+                raising an error.
+
+        Returns:
+            The inserted row with all model columns populated, or None if
+            `ignore_conflicts` is True and the insert was skipped due to a
+            conflict.
+
+        Raises:
+            ValueError: If a key in `value` is not a column of the bound
+                model.
+            IntegrityError: If the insert violates a unique, foreign-key,
+                or not-null constraint and `ignore_conflicts` is False.
+
+        Example:
+            Creating a GIF row::
+
+                gif = await gif_repo.create_one(
+                    {Gif.file_path: "a.mp4", Gif.file_hash: "abc"}
+                )
         """
         validate_columns_for_model(
             value.keys(),
@@ -109,31 +137,43 @@ class _BaseCRUD(Generic[T]):
         return result.scalar_one_or_none()
 
     async def create_many(
-        self,
-        values: Sequence[dict[InstrumentedAttribute, Any]],
-        ignore_conflicts: bool = False,
+            self,
+            values: Sequence[dict[InstrumentedAttribute, Any]],
+            ignore_conflicts: bool = False,
     ) -> list[T]:
-        """
-        Создаёт несколько записей в таблице текущей ORM-модели.
+        """Inserts multiple rows for the bound ORM model in one query.
 
-        Метод выполняет массовую вставку (INSERT) нескольких записей за один
-        запрос к базе данных и возвращает созданные строки.
+        Unlike `create_one`, all rows are inserted via a single
+        multi-row ``INSERT ... RETURNING`` statement.
 
-        В отличие от `create_one`, метод не выполняет обработку конфликтов
-        уникальности. Если одна из записей нарушает ограничение таблицы
-        (например UNIQUE или PRIMARY KEY), операция вставки завершится ошибкой.
+        Args:
+            values: Sequence of mappings, each describing one row as
+                ``{column: value}``.
+            ignore_conflicts: If True, adds ``ON CONFLICT DO NOTHING`` so
+                rows that violate a unique or primary-key constraint are
+                skipped instead of raising an error.
 
-        :param values: Список словарей {column: value}, где column — колонка
-                       модели ORM (`InstrumentedAttribute`), а value —
-                       значение для вставки.
-        :param ignore_conflicts: Пропускает уже имеющиеся записи. 
-                                 Применяет к запросу метод on_conflict_do_nothing().
+        Returns:
+            The inserted rows with all model columns populated. If
+            `ignore_conflicts` is True, skipped rows are simply absent
+            from the result — the returned list may be shorter than
+            `values`.
 
-        :return: Список строк результата (`Row`), содержащих значения всех
-                 колонок модели после вставки.
+        Raises:
+            ValueError: If a key in any of the `values` mappings is not a
+                column of the bound model.
+            IntegrityError: If an insert violates a unique, foreign-key,
+                or not-null constraint and `ignore_conflicts` is False.
 
-        :raises ValueError: Если переданная колонка не принадлежит текущей
-                            ORM-модели.
+        Example:
+            Linking one user's GIF to several tags at once, skipping ones
+            that already exist::
+
+                await user_gif_tag_repo.create_many(
+                    [{UserGifTag.user_id: 1, UserGifTag.gif_id: 2, UserGifTag.tag_id: t}
+                     for t in (3, 4)],
+                    ignore_conflicts=True,
+                )
         """
         for value in values:
             validate_columns_for_model(
@@ -176,14 +216,31 @@ class _BaseCRUD(Generic[T]):
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
             scalars: bool = False
     ) -> list[Row[tuple[Any]]] | list[Any]:
-        """
-        Универсальный метод получения записей с фильтрацией по колонкам.
-    
-        :param columns: Колонки для возврата. Если None — вернутся все.
-        :param filters: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
-                       а value — значение для фильтрации.
-        :param scalars: Будет ли применен scalars() к результату.
-        :return: Список объектов с выбранными колонками.
+        """Fetches rows from the bound model's table with optional filtering.
+
+        A filter value that is a list/tuple/set is matched with ``IN``;
+        any other value is matched with ``==``.
+
+        Args:
+            columns: Column(s) to select. If None, all columns of the
+                bound model are selected.
+            filters: Mapping of column to value(s) to filter by, e.g.
+                ``{User.id: [1, 2, 3]}``.
+            scalars: If True, unwraps each result row to its single
+                column value instead of returning a `Row`. Only makes
+                sense when `columns` is a single column.
+
+        Returns:
+            A list of `Row` objects containing the requested columns, or
+            a list of scalar values if `scalars` is True.
+
+        Example:
+            Fetching just the Telegram IDs for a set of internal user
+            IDs::
+
+                tg_ids = await user_repo.get_many(
+                    columns=User.tg_id, filters={User.id: [1, 2]}, scalars=True
+                )
         """
         stmt = self._build_get_stmt(
             columns=columns,
@@ -221,14 +278,30 @@ class _BaseCRUD(Generic[T]):
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
             scalar: bool = False
     ) -> Row[tuple[Any]] | Any | None:
-        """
-        Универсальный метод получения записей с фильтрацией по колонкам.
+        """Fetches a single row from the bound model's table.
 
-        :param columns: Колонки для возврата. Если None — вернутся все.
-        :param filters: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
-                       а value — значение для фильтрации.
-        :param scalars: Будет ли применен scalars() к результату.
-        :return: Список объектов с выбранными колонками.
+        Equivalent to `get_many` with a ``LIMIT 1``. If several rows match
+        the filters, an arbitrary one is returned — pass filters specific
+        enough to identify a single row when order matters.
+
+        Args:
+            columns: Column(s) to select. If None, all columns of the
+                bound model are selected.
+            filters: Mapping of column to value(s) to filter by.
+            scalar: If True, unwraps the result to its single column value
+                instead of returning a `Row`. Only makes sense when
+                `columns` is a single column.
+
+        Returns:
+            A `Row` with the requested columns, a scalar value if `scalar`
+            is True, or None if no row matches.
+
+        Example:
+            Looking up an internal user ID by Telegram ID::
+
+                user_id = await user_repo.get_one(
+                    columns=User.id, filters={User.tg_id: 123456}, scalar=True
+                )
         """
         stmt = self._build_get_stmt(
             columns=columns,
@@ -246,12 +319,18 @@ class _BaseCRUD(Generic[T]):
             self,
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
     ) -> list[T]:
-        """
-        Универсальный метод получения ORM модели текущей таблицы.
+        """Fetches full ORM instances of the bound model.
 
-        :param filters: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
-                       а value — значение для фильтрации.
-        :return: Список объектов с выбранными колонками.
+        Unlike `get_many`, always selects the whole model rather than
+        specific columns, returning ready-to-use ORM objects (with
+        relationships accessible, subject to loading configuration).
+
+        Args:
+            filters: Mapping of column to value(s) to filter by, e.g.
+                ``{Gif.file_hash: "abc"}``.
+
+        Returns:
+            A list of ORM instances of the bound model.
         """
         stmt = self._build_get_orm_stmt(
             filters=filters
@@ -265,14 +344,22 @@ class _BaseCRUD(Generic[T]):
             self,
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
     ) -> T | None:
-        """
-        Универсальный метод получения записей с фильтрацией по колонкам.
+        """Fetches a single full ORM instance of the bound model.
 
-        :param columns: Колонки для возврата. Если None — вернутся все.
-        :param filters: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
-                       а value — значение для фильтрации.
-        :param scalars: Будет ли применен scalars() к результату.
-        :return: Список объектов с выбранными колонками.
+        Equivalent to `get_many_orm` with a ``LIMIT 1``. If several rows
+        match the filters, an arbitrary one is returned.
+
+        Args:
+            filters: Mapping of column to value(s) to filter by.
+
+        Returns:
+            An ORM instance of the bound model, or None if no row matches.
+
+        Example:
+            Checking whether a file with a given hash was already
+            uploaded, and reusing it if so::
+
+                gif = await gif_repo.get_one_orm(filters={Gif.file_hash: file_hash})
         """
         stmt = self._build_get_orm_stmt(
             filters=filters
@@ -287,17 +374,25 @@ class _BaseCRUD(Generic[T]):
             values: dict[InstrumentedAttribute, Any],
             filters: dict[InstrumentedAttribute, Any]
     ) -> T:
-        """
-        Универсальный метод обновления одной записи в таблице модели.
+        """Updates exactly one row matched by `filters`.
 
-        Метод обновляет **только одну запись**: либо по первичному ключу (`instance_id`), 
-        либо по заданным фильтрам (`filters`). Возвращает все колонки обновлённой записи после выполнения операции.
+        Args:
+            values: Mapping of column to the new value, e.g.
+                ``{User.tg_id: 999}``.
+            filters: Mapping of column to value(s) identifying the row to
+                update. Callers are responsible for making sure this
+                matches exactly one row.
 
-        :param instance_id: Значение первичного ключа записи для обновления. Если указано, фильтры игнорируются.
-        :param values: Словарь {column: value}, где column — колонка модели (InstrumentedAttribute),
-                       а value — новое значение для обновления.
-        :param filters: Словарь {column: value} для фильтрации обновляемых записей, используется если `instance_id` не задан.
-        :return: Row с колонками модели после обновления, или None, если запись не найдена.
+        Returns:
+            The updated row with all model columns.
+
+        Raises:
+            ValueError: If a key in `values` is not a column of the bound
+                model.
+            IntegrityError: If the update violates a unique, foreign-key,
+                or not-null constraint.
+            NoResultFound: If `filters` matches no rows.
+            MultipleResultsFound: If `filters` matches more than one row.
         """
         validate_columns_for_model(values.keys(), self._model)
         
@@ -311,6 +406,17 @@ class _BaseCRUD(Generic[T]):
             self,
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any]
     ) -> list[T]:
+        """Deletes all rows matched by `filters`.
+
+        Args:
+            filters: Mapping of column to value(s) identifying the rows to
+                delete, e.g. ``{User.id: [2, 3]}``.
+
+        Returns:
+            The deleted rows with all model columns, in whatever order the
+            database returned them. An empty list means nothing matched
+            `filters`.
+        """
         stmt = delete(self._model)
         stmt = self._add_filters_to_stmt(stmt, filters)
         
@@ -324,10 +430,27 @@ class _BaseCRUD(Generic[T]):
             stmt: T_stmt,
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any],
     ) -> T_stmt:
+        """Applies WHERE conditions from `filters` to a statement.
+
+        A filter value that is a list/tuple/set is matched with ``IN``;
+        any other value is matched with ``==``.
+
+        Args:
+            stmt: The `Select`, `Update`, `Delete`, or `Insert` statement
+                to add conditions to.
+            filters: Mapping of column to value(s) to filter by.
+
+        Returns:
+            The same statement with the corresponding WHERE clauses added.
+
+        Raises:
+            ValueError: If a key in `filters` is not a column of the bound
+                model.
+        """
         for column, values in filters.items():
             if not is_valid_column_for_model(column, self._model):
-                raise ValueError(f"В ключе для фильтрации ожидается колонка модели {self._model.__name__}. "
-                                 f"Вы передали {type(column)}, а именно {column}.")
+                raise ValueError(f"Expected a column of model {self._model.__name__} as a filter key. "
+                                 f"Got {type(column)}: {column}.")
             if not isinstance(values, (list, tuple, set)):
                 stmt = stmt.where(column == values)
             else:
@@ -340,6 +463,22 @@ class _BaseCRUD(Generic[T]):
             columns: Sequence[InstrumentedAttribute] | InstrumentedAttribute | None = None,
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
     ) -> Select:
+        """Builds a `Select` statement for the given columns and filters.
+
+        Shared by `get_many` and `get_one`.
+
+        Args:
+            columns: Column(s) to select. If None, all columns of the
+                bound model are selected.
+            filters: Mapping of column to value(s) to filter by.
+
+        Returns:
+            The constructed `Select` statement.
+
+        Raises:
+            ValueError: If a column in `columns` or a key in `filters` is
+                not a column of the bound model.
+        """
         if columns and isinstance(columns, InstrumentedAttribute):
             columns = (columns,)
 
@@ -359,6 +498,20 @@ class _BaseCRUD(Generic[T]):
             self,
             filters: dict[InstrumentedAttribute, Sequence[Any] | Any] | None = None,
     ) -> Select:
+        """Builds a `Select` statement over the full bound model.
+
+        Shared by `get_many_orm` and `get_one_orm`.
+
+        Args:
+            filters: Mapping of column to value(s) to filter by.
+
+        Returns:
+            The constructed `Select` statement.
+
+        Raises:
+            ValueError: If a key in `filters` is not a column of the bound
+                model.
+        """
         stmt = select(self._model)
 
         if filters:

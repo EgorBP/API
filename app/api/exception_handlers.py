@@ -10,18 +10,30 @@ from app.core.exceptions import AppException
 
 
 class AppExceptionHandlers:
-    """
-    Registers FastAPI exception handlers for application-level and database errors.
+    """Registers FastAPI exception handlers for app-level and database errors.
 
-    Converts internal exceptions into standardized HTTP responses and logs
-    failures with appropriate context.
+    Converts internal exceptions (domain `AppException` subclasses,
+    validation errors, and SQLAlchemy errors) into standardized JSON
+    error responses, and logs each failure with request context at a
+    severity appropriate to the error.
     """
-
+    
     def __init__(self, logger: logging.Logger | None = None) -> None:
+        """Initializes the handler registry.
+
+        Args:
+            logger: Logger to use for reporting errors. Defaults to
+                `logging.getLogger("app.api.exceptions")`.
+        """
         self.logger = logger or logging.getLogger("app.api.exceptions")
 
     def register(self, app: FastAPI) -> None:
-        """Attach exception handlers to the FastAPI application instance."""
+        """Attaches all exception handlers to the FastAPI application.
+
+        Args:
+            app: The FastAPI application instance to register handlers
+                on.
+        """
         to_register = {
             AppException: self._handle_app_exception,
             ValueError: self._handle_value_error,
@@ -168,6 +180,18 @@ class AppExceptionHandlers:
 
     @staticmethod
     def _compact_validation_errors(errors: list[dict[str, Any]]) -> list[str]:
+        """Formats Pydantic validation errors as short one-line strings.
+
+        Used only for logging — the full structured `errors` are still
+        returned to the client as-is by `_handle_validation_error`.
+
+        Args:
+            errors: The error list from `RequestValidationError.errors()`.
+
+        Returns:
+            One string per error, as `"field.path: message"`, or just the
+            message if there's no location.
+        """
         compact: list[str] = []
         for err in errors:
             loc = ".".join(str(part) for part in err.get("loc", []))
@@ -177,12 +201,18 @@ class AppExceptionHandlers:
 
     @staticmethod
     def _map_integrity_error(exc: IntegrityError) -> tuple[str, int]:
-        """
-        Maps PostgreSQL integrity violation codes to HTTP status codes.
+        """Maps a PostgreSQL integrity violation to an HTTP status and message.
 
-        - 23505: unique constraint violation
-        - 23503: foreign key violation
-        - 23502: not null violation
+        Args:
+            exc: The integrity error to map.
+
+        Returns:
+            A tuple of `(detail_message, http_status_code)`:
+
+            - ``23505`` (unique violation) → 409, "Resource already exists."
+            - ``23503`` (foreign key violation) → 409, "Referenced resource does not exist."
+            - ``23502`` (not-null violation) → 400, "Required field is missing."
+            - any other or unknown code → 409, "Data conflict."
         """
         orig = getattr(exc, "orig", None)
         pgcode = getattr(orig, "pgcode", None)

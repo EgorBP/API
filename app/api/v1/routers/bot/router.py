@@ -1,3 +1,5 @@
+"""Combines the bot-facing users router under `/bot`, guarded by a shared secret key."""
+
 from fastapi import APIRouter, Depends
 from app.api.dependencies.auth import verify_secret_key
 from app.api.v1.routers.bot.user import router as users_router

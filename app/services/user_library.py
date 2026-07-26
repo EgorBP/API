@@ -1,13 +1,20 @@
+"""User GIF library management: uploads, tagging, and content deduplication.
+
+Central place where uploaded files, `Gif` rows, and per-user `Tag` links
+come together. Files are deduplicated across all users by content hash,
+so most of the complexity here is about reusing existing `Gif` rows
+instead of re-saving identical files, and keeping each user's tag set on
+a GIF in sync with what they submitted.
+"""
+
 from fastapi import UploadFile
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Sequence
 from redis.asyncio import Redis
-import json
 import logging
 
-from app.core.exceptions import GifNotFoundError, TagNotFoundError
-from app.models import UserGifTag, Gif, Tag
+from app.core.exceptions import GifNotFoundError
+from app.models import UserGifTag, Gif
 from app.schemas.common import CursorPaginatedResponse, CursorPaginationMeta
 from app.schemas.gif import GifOut
 from app.repositories import UserGifTagRepository, TagRepository, GifRepository, UserRepository
@@ -20,14 +27,28 @@ from app.utils.storage import create_unique_filename_and_hash
 logger = logging.getLogger(__name__)
 
 
-# TODO: update dockstring
 class UserLibraryService:
+    """Manages a user's personal GIF library: adding, tagging, and removing GIFs.
+
+    A GIF file is deduplicated across all users by content hash — adding
+    a GIF that already exists elsewhere reuses the stored file and `Gif`
+    row, only creating new per-user tag links. All mutating methods share
+    a per-user Redis cache namespace, fully invalidated after each write.
+    """
+    
     def __init__(
             self,
             session: AsyncSession,
             redis: Redis,
             storage: StorageProvider,
     ):
+        """Initializes the service.
+
+        Args:
+            session: The async SQLAlchemy session for library operations.
+            redis: The Redis client used for caching.
+            storage: The storage backend used to save uploaded GIF files.
+        """
         self.storage = storage
         
         self._session = session
@@ -39,6 +60,14 @@ class UserLibraryService:
             self,
             user_id: int
     ):
+        """Returns how many distinct GIFs are in a user's library, cached.
+
+        Args:
+            user_id: Internal ID of the user.
+
+        Returns:
+            The number of GIFs in the user's library.
+        """
         cache_path = f"{self._get_service_cache_prefix(user_id)}:gifs:count"
         gifs_count = await self._redis.get(cache_path)
         if gifs_count:
@@ -79,6 +108,23 @@ class UserLibraryService:
             tags: set[str] | str | None = None,
             cursor: int | None = None
     ) -> CursorPaginatedResponse:
+        """Lists a user's GIFs, each with its tags, with optional filtering.
+
+        Results are cached per unique combination of `gif_ids`, `tags`,
+        `cursor`, and `limit` for this user.
+
+        Args:
+            user_id: Internal ID of the user.
+            limit: Maximum number of GIFs to return per page.
+            gif_ids: If given, restricts results to these GIF IDs.
+            tags: If given, only GIFs tagged with all of these tags (by
+                this user) are returned.
+            cursor: If given, continues a previous page from this GIF ID.
+
+        Returns:
+            A page of the user's GIFs (each including its tags) plus
+            pagination metadata (`has_next`, `next_cursor`).
+        """
         gif_repo = GifRepository(self._session)
         
         if isinstance(gif_ids, int):
@@ -87,7 +133,7 @@ class UserLibraryService:
         if isinstance(tags, str):
             tags = {tags}
 
-        # Кеширование
+        # Caching
         tags = tags or set()
         normalized_tags = sorted([tag.strip() for tag in tags])
         tags_string = ",".join(normalized_tags) if normalized_tags else "all"
@@ -161,6 +207,14 @@ class UserLibraryService:
             self,
             user_id: int,
     ) -> RawTagsOut:
+        """Returns every distinct tag a user has used, cached.
+
+        Args:
+            user_id: Internal ID of the user.
+
+        Returns:
+            The user's distinct tags and their count.
+        """
         tag_repo = TagRepository(self._session)
 
         cache_key = f"{self._get_service_cache_prefix(user_id)}:all_user_tags"
@@ -207,6 +261,22 @@ class UserLibraryService:
             gif_file: UploadFile,
             tags: set[str]
     ) -> GifOut:
+        """Adds a GIF to a user's library, uploading it only if new.
+
+        Computes the file's content hash to check whether an identical
+        file already exists (uploaded by this or any other user); if so,
+        the existing `Gif` row is reused and only new tag links are
+        created for this user. Otherwise the file is saved via `storage`
+        and a new `Gif` row is created.
+
+        Args:
+            user_id: Internal ID of the user.
+            gif_file: The uploaded GIF/MP4 file.
+            tags: Tags to assign to the GIF for this user.
+
+        Returns:
+            The resulting GIF, as seen in this user's library.
+        """
         tag_repository = TagRepository(self._session)
         gif_repository = GifRepository(self._session)
         user_gif_tag_repository = UserGifTagRepository(self._session)
@@ -271,6 +341,16 @@ class UserLibraryService:
             gif_id: int,
             tags: set[str],
     ) -> None:
+        """Replaces a user's tag set on an existing GIF.
+
+        Args:
+            user_id: Internal ID of the user.
+            gif_id: Internal ID of the GIF.
+            tags: The new complete set of tags for this user on this GIF.
+
+        Raises:
+            GifNotFoundError: If no GIF exists with this `gif_id`.
+        """
         tag_repository = TagRepository(self._session)
         user_gif_tag_repository = UserGifTagRepository(self._session)
         gif_repository = GifRepository(self._session)
@@ -297,7 +377,7 @@ class UserLibraryService:
                     }
                 )
 
-                # Инвалидируем кэш
+                # Invalidate cache
                 await self._invalidate_current_service_cache(user_id)
 
             except Exception:
@@ -321,6 +401,23 @@ class UserLibraryService:
             user_id: int,
             gif_ids: list[int],
     ) -> int:
+        """Removes GIFs from a user's library, along with their tag links.
+
+        This only removes the user's association with the GIFs — the
+        underlying `Gif` rows and files are left untouched, since other
+        users may still have them in their libraries.
+
+        Args:
+            user_id: Internal ID of the user.
+            gif_ids: IDs of the GIFs to remove from the user's library.
+
+        Returns:
+            The number of `(user, GIF, tag)` links deleted.
+
+        Raises:
+            GifNotFoundError: If none of `gif_ids` were actually linked to
+                this user (nothing was deleted).
+        """
         user_gif_tag_repository = UserGifTagRepository(self._session)
         
         try:
@@ -361,6 +458,11 @@ class UserLibraryService:
             self,
             user_id: int
     ):
+        """Removes every cached entry for this service under a user's namespace.
+
+        Args:
+            user_id: Internal ID of the user.
+        """
         objects_count = await invalidate_many(
             redis=self._redis,
             match=f"{self._get_service_cache_prefix(user_id)}:*"
@@ -381,6 +483,21 @@ class UserLibraryService:
             tag_repository: TagRepository,
             user_gif_tag_repository: UserGifTagRepository
     ) -> None:
+        """Ensures a GIF is linked to exactly the given tags for a user.
+
+        Creates any tags that don't exist yet, links the GIF to all of
+        them, and unlinks any tag not in `tags` that was previously
+        assigned — i.e. makes `tags` the new complete tag set for this
+        `(user, gif)` pair.
+
+        Args:
+            user_id: Internal ID of the user.
+            gif_id: Internal ID of the GIF.
+            tags: The complete new set of tags.
+            tag_repository: Repository used to create/look up tags.
+            user_gif_tag_repository: Repository used to create/delete the
+                `(user, gif, tag)` links.
+        """
         tags = await tag_repository.fake_upsert_tags(tags)
         tag_ids = {tag.id for tag in tags}
         
@@ -406,4 +523,12 @@ class UserLibraryService:
     def _get_service_cache_prefix(
             user_id: int
     ) -> str:
+        """Builds the Redis key prefix for this service's cache entries.
+
+        Args:
+            user_id: Internal ID of the user.
+
+        Returns:
+            The prefix, e.g. ``"user_id:42:library"``.
+        """
         return f"{UserService.get_user_cache_prefix(user_id)}:library"

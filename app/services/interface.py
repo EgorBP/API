@@ -3,23 +3,38 @@ from fastapi import UploadFile
 
 
 class StorageProvider(Protocol):
-    """Интерфейс, которому должно соответствовать любое хранилище файлов в системе."""
+    """Interface that any file storage backend in the system must implement.
+
+    Allows swapping the storage backend (local disk, S3, etc.) without
+    changing service code — anything conforming to this protocol can be
+    passed wherever a `StorageProvider` is expected.
+    """
 
     async def save_file(
             self, 
             file: UploadFile, 
             filename: str
     ) -> str:
-        """
-        Асинхронно сохраняет загруженный файл в целевое хранилище
-        или возвращает его путь если файл существует без сохранения.
+        """Saves an uploaded file to the target storage.
 
-        :param file: Объект файла от FastAPI, содержащий поток байтов.
-        :param filename: Уникальное имя, под которым файл должен быть сохранен.
-        :return: Относительный путь от корня проекта (для диска) или ключ объекта (для S3).
+        If a file with the same `filename` already exists in storage,
+        implementations may skip re-writing it and simply return its
+        path, since callers typically derive `filename` from the file's
+        content hash.
 
-        :raises IOError: Ошибка записи на локальный диск (нет прав, закончилось место).
-        :raises RuntimeError: Сбой сети или отказ удаленного облачного провайдера.
+        Args:
+            file: The uploaded file, as a byte stream.
+            filename: The name the file should be stored under.
+
+        Returns:
+            The path or key under which the file was stored — e.g. a path
+            relative to the project root for local disk, or an object key
+            for S3.
+
+        Raises:
+            IOError: On a local-disk write failure (no permissions, out of
+                space).
+            RuntimeError: On a network failure or remote provider error.
         """
         ...
 
@@ -27,14 +42,17 @@ class StorageProvider(Protocol):
             self, 
             file_key: str
     ) -> None:
-        """
-        Асинхронно удаляет файл из хранилища.
+        """Deletes a file from storage.
 
-        :param file_key: Относительный путь или ключ объекта, ранее возвращенный методом `save_file`.
-        :return: None
+        Args:
+            file_key: The path or object key previously returned by
+                `save_file`.
 
-        :raises FileNotFoundError: Если указанный файл отсутствует в хранилище.
-        :raises PermissionError: Попытка выйти за пределы разрешенной медиа-директории.
-        :raises RuntimeError: Если хранилище недоступно или произошел сбой удаления.
+        Raises:
+            FileNotFoundError: If no file exists at `file_key`.
+            PermissionError: If `file_key` resolves outside the allowed
+                storage directory.
+            RuntimeError: If the storage backend is unreachable or the
+                deletion otherwise fails.
         """
         ...
