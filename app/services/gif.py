@@ -114,9 +114,12 @@ class GifService:
         )
 
         has_next = len(gifs) > limit
-        gifs = gifs[:limit] if has_next else gifs
-        next_cursor = gifs[-1].id if gifs else None
-        
+        if has_next:
+            gifs = gifs[:limit]
+            next_cursor = gifs[-1].id
+        else:
+            next_cursor = None
+            
         gifs_data = [
             RawGifOut.model_validate(gif._mapping)
             for gif in gifs

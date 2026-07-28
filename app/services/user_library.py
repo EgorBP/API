@@ -170,9 +170,12 @@ class UserLibraryService:
         )
 
         has_next = len(rows) > limit
-        rows = rows[:limit] if has_next else rows
-        next_cursor = rows[-1].id if rows else None
-        
+        if has_next:
+            rows = rows[:limit]
+            next_cursor = rows[-1].id
+        else:
+            next_cursor = None
+
         gifs_data = [
             GifOut.model_validate(row._mapping)
             for row in rows
