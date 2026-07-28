@@ -66,7 +66,9 @@ class TestGifSearchEndpoint:
         )
         first_data = first_page.json()
 
+        assert first_data["pagination"]["limit"] == 1
         assert first_data["pagination"]["has_next"] is True
+        assert first_data["pagination"]["next_cursor"] == first_data["data"][-1]["id"]
         cursor = first_data["pagination"]["next_cursor"]
 
         second_page = await client.get(
@@ -74,9 +76,78 @@ class TestGifSearchEndpoint:
         )
         second_data = second_page.json()
 
+        assert second_data["pagination"]["has_next"] is True
+        assert second_data["pagination"]["next_cursor"] == second_data["data"][-1]["id"]
+
         first_ids = {g["id"] for g in first_data["data"]}
         second_ids = {g["id"] for g in second_data["data"]}
         assert first_ids.isdisjoint(second_ids)
+
+    async def test_pagination_has_next_false_when_items_exactly_fill_the_page(
+            self, client: AsyncClient, seed_gif
+    ):
+        """Edge case: exactly `limit` matching items exist -> no next page."""
+        await seed_gif(tg_id=900040, file_hash="pub_hash_edge_exact_1", tags={"edge_exact_tag"})
+        await seed_gif(tg_id=900041, file_hash="pub_hash_edge_exact_2", tags={"edge_exact_tag"})
+
+        response = await client.get("/api/v1/gifs", params={"tags": ["edge_exact_tag"], "limit": 2})
+        data = response.json()
+
+        assert len(data["data"]) == 2
+        assert data["pagination"]["limit"] == 2
+        assert data["pagination"]["has_next"] is False
+        assert data["pagination"]["next_cursor"] is None
+
+    async def test_pagination_has_next_false_when_fewer_items_than_limit(
+            self, client: AsyncClient, seed_gif
+    ):
+        """Edge case: fewer matching items than `limit` -> no next page."""
+        await seed_gif(tg_id=900042, file_hash="pub_hash_edge_fewer", tags={"edge_fewer_tag"})
+
+        response = await client.get("/api/v1/gifs", params={"tags": ["edge_fewer_tag"], "limit": 5})
+        data = response.json()
+
+        assert len(data["data"]) == 1
+        assert data["pagination"]["has_next"] is False
+        assert data["pagination"]["next_cursor"] is None
+
+    async def test_pagination_empty_result_has_next_false(self, client: AsyncClient, seed_gif):
+        """Edge case: no matching items at all -> no next page, no cursor."""
+        await seed_gif(tg_id=900043, file_hash="pub_hash_edge_empty", tags={"some_other_tag"})
+
+        response = await client.get("/api/v1/gifs", params={"tags": ["truly_nonexistent_tag"], "limit": 20})
+        data = response.json()
+
+        assert data["data"] == []
+        assert data["pagination"]["has_next"] is False
+        assert data["pagination"]["next_cursor"] is None
+
+    async def test_pagination_last_page_after_cursor_has_next_false(
+            self, client: AsyncClient, seed_gif
+    ):
+        """Edge case: 3 items, limit=2 -> second page holds the single
+        remaining item and correctly reports there's no third page."""
+        for i in range(3):
+            await seed_gif(tg_id=900050 + i, file_hash=f"pub_hash_edge_exhaust_{i}", tags={"edge_exhaust_tag"})
+
+        first_page = await client.get("/api/v1/gifs", params={"tags": ["edge_exhaust_tag"], "limit": 2})
+        first_data = first_page.json()
+        assert len(first_data["data"]) == 2
+        assert first_data["pagination"]["has_next"] is True
+
+        second_page = await client.get(
+            "/api/v1/gifs",
+            params={
+                "tags": ["edge_exhaust_tag"],
+                "limit": 2,
+                "cursor": first_data["pagination"]["next_cursor"],
+            },
+        )
+        second_data = second_page.json()
+
+        assert len(second_data["data"]) == 1
+        assert second_data["pagination"]["has_next"] is False
+        assert second_data["pagination"]["next_cursor"] is None
 
 
 class TestPopularTagsForGifEndpoint:

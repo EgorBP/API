@@ -45,11 +45,15 @@ dependencies = [
     "bcrypt>=5.0.0",
     "testcontainers[postgres,redis]>=4.15.0",
     "pytest-xdist>=3.8.0",
+    "pytest-env>=1.1.5",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+env = [
+    "DEV_MODE=false",
+]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
