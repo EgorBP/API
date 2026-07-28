@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 import jwt
 
 from app import settings
+from app.schemas.auth import TelegramAuthSchema
 
 
 def verify_telegram_widget_data(
@@ -123,3 +124,51 @@ def create_refresh_token(
 
     token = jwt.encode(to_encode, secret_key, algorithm=algorithm)
     return token, token_jti
+
+
+def generate_fake_telegram_auth_data(
+        user_id: int = 12345678,
+        first_name: str = "Test",
+        last_name: str | None = "User",
+        username: str | None = "test_user",
+        photo_url: str | None = None,
+        bot_token: str = settings.BOT_TOKEN
+) -> TelegramAuthSchema:
+    """Generates a fake Telegram authentication payload signed with the bot token.
+
+    Computes a valid HMAC-SHA256 signature for the provided mock Telegram user data
+    so that it passes auth signature verification during testing.
+
+    Args:
+        user_id: Telegram user ID to embed in the payload.
+        first_name: Mock user's first name.
+        last_name: Mock user's last name.
+        username: Mock user's Telegram username.
+        photo_url: Mock user's profile photo URL.
+        bot_token: Bot token used to compute the HMAC signature.
+
+    Returns:
+        A populated `TelegramAuthSchema` instance with a valid `hash`.
+    """
+    auth_date = int(time.time())
+
+    raw_data = {
+        "id": user_id,
+        "first_name": first_name,
+        "last_name": last_name,
+        "username": username,
+        "photo_url": photo_url,
+        "auth_date": auth_date,
+    }
+    filtered_data = {k: v for k, v in raw_data.items() if v is not None}
+    
+    data_check_list = [f"{k}={v}" for k, v in sorted(filtered_data.items())]
+    data_check_string = "\n".join(data_check_list)
+       
+    secret_key = hashlib.sha256(bot_token.encode("utf-8")).digest()
+    
+    calculated_hash = hmac.new(
+        secret_key, data_check_string.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    
+    return TelegramAuthSchema(**filtered_data, hash=calculated_hash)

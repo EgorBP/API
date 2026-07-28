@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     environment are ignored rather than raising an error.
 
     Attributes:
+        DEV_MODE: Enable dev endpoints.
         POSTGRES_USER: PostgreSQL username.
         POSTGRES_PASSWORD: PostgreSQL password.
         POSTGRES_DB: PostgreSQL database name.
@@ -30,6 +31,8 @@ class Settings(BaseSettings):
         MEDIA_DIR: Absolute path to the directory where GIF/MP4 files are
             stored.
     """
+    DEV_MODE: bool = False
+    
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
     POSTGRES_DB: str
