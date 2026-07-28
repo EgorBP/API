@@ -71,7 +71,8 @@ cp envs/.env.example envs/.env
 cp envs/.env.docker.example envs/.env.docker
 ```
 > DEV_MODE позволяет создавать JWT токены через отдельный эндпоинт для любого Telegram ID пользователя.   
-> Для тестов DEV_MODE всегда false.  
+> Для тестов DEV_MODE всегда false.
+> 
 > Для использования настоящей аутентификации через Telegram создайте своего бота в [@BotFather](https://telegram.me/BotFather), замените BOT_TOKEN на ваш токен и задайте адрес вашего сайта в [@BotFather](https://telegram.me/BotFather) → Login Widget.
 
 ### 2. 🐳 Docker Compose
