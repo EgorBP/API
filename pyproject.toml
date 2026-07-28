@@ -39,11 +39,21 @@ dependencies = [
     "httpx>=0.28.1",
     "redis>=8.0.1",
     "pydantic-settings>=2.14.2",
+    "pyrefly>=0.60.0",
+    "python-multipart>=0.0.32",
+    "pyjwt[crypto]>=2.13.0",
+    "bcrypt>=5.0.0",
+    "testcontainers[postgres,redis]>=4.15.0",
+    "pytest-xdist>=3.8.0",
+    "pytest-env>=1.1.5",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+env = [
+    "DEV_MODE=false",
+]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]

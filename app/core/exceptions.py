@@ -1,144 +1,266 @@
-import logging
 from typing import Any
-from fastapi import FastAPI, Request, status
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 
 
-class AppExceptionHandlers:
+class AppException(Exception):
+    """Base class for all application-level errors.
+
+    Subclasses are caught by `AppExceptionHandlers` and converted into a
+    standardized JSON error response. Raise this directly only for
+    generic cases; prefer a domain-specific subclass where one exists.
+
+    Attributes:
+        status_code: Default HTTP status code returned for this error.
+        error_code: Default machine-readable error code returned for this
+            error.
     """
-    Registers FastAPI exception handlers for application-level errors.
+    status_code: int = 400
+    error_code: str = "BAD_REQUEST"
 
-    Converts internal exceptions into HTTP responses and logs
-    unexpected failures with traceback information.
-    """
-    def __init__(self, logger: logging.Logger | None = None) -> None:
-        self.logger = logger or logging.getLogger("app.api.exceptions")
-
-    def register(self, app: FastAPI) -> None:
-        """
-        Attach exception handlers to FastAPI application instance.
-
-        :param app: FastAPI application where handlers will be registered.
-        """
-        app.add_exception_handler(ValueError, self._handle_value_error)
-        app.add_exception_handler(RequestValidationError, self._handle_validation_error)
-        app.add_exception_handler(IntegrityError, self._handle_integrity_error)
-        app.add_exception_handler(OperationalError, self._handle_operational_error)
-        app.add_exception_handler(SQLAlchemyError, self._handle_sqlalchemy_error)
-
-    async def _handle_value_error(self, request: Request, exc: ValueError) -> JSONResponse:
-        self.logger.warning(
-            "ValueError on %s %s: %s",
-            request.method,
-            request.url.path,
-            exc,
-        )
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"detail": str(exc)},
-        )
-
-    async def _handle_validation_error(
+    def __init__(
         self,
-        request: Request,
-        exc: RequestValidationError,
-    ) -> JSONResponse:
-        errors = exc.errors()
+        message: str = "An application error occurred.",
+        status_code: int | None = None,
+        error_code: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Initializes the exception.
 
-        self.logger.warning(
-            "Request validation failed on %s %s: %s",
-            request.method,
-            request.url.path,
-            self._compact_validation_errors(errors),
-        )
-
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={
-                "detail": "Validation error.",
-                "errors": errors,
-            },
-        )
-
-    async def _handle_integrity_error(
-        self,
-        request: Request,
-        exc: IntegrityError,
-    ) -> JSONResponse:
-        detail, status_code = self._map_integrity_error(exc)
-
-        self.logger.info(
-            "Database integrity error on %s %s: %s",
-            request.method,
-            request.url.path,
-            detail,
-        )
-
-        return JSONResponse(
-            status_code=status_code,
-            content={"detail": detail},
-        )
-
-    async def _handle_operational_error(
-        self,
-        request: Request,
-        exc: OperationalError,
-    ) -> JSONResponse:
-        self.logger.exception(
-            "Database operational error on %s %s",
-            request.method,
-            request.url.path,
-        )
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"detail": "Service temporarily unavailable."},
-        )
-
-    async def _handle_sqlalchemy_error(
-        self,
-        request: Request,
-        exc: SQLAlchemyError,
-    ) -> JSONResponse:
-        self.logger.exception(
-            "SQLAlchemy error on %s %s",
-            request.method,
-            request.url.path,
-        )
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": "Internal database error."},
-        )
-
-    @staticmethod
-    def _compact_validation_errors(errors: list[dict[str, Any]]) -> list[str]:
-        compact: list[str] = []
-        for err in errors:
-            loc = ".".join(str(part) for part in err.get("loc", []))
-            msg = err.get("msg", "Invalid value")
-            compact.append(f"{loc}: {msg}" if loc else msg)
-        return compact
-
-    @staticmethod
-    def _map_integrity_error(exc: IntegrityError) -> tuple[str, int]:
+        Args:
+            message: Human-readable error message returned to the client.
+            status_code: Overrides the class-level `status_code` if given.
+            error_code: Overrides the class-level `error_code` if given.
+            details: Extra structured data included in the response body,
+                e.g. the offending IDs.
         """
-        Maps PostgreSQL integrity violation codes to HTTP status codes.
+        self.message = message
+        if status_code is not None:
+            self.status_code = status_code
+        if error_code is not None:
+            self.error_code = error_code
+        self.details = details or {}
+        super().__init__(self.message)
 
-        Handles:
-        
-        - 23505: unique constraint violation
-        - 23503: foreign key violation
-        - 23502: not null violation
+
+class NotFoundError(AppException):
+    """Base class for HTTP 404 errors."""
+    status_code = 404
+    error_code = "NOT_FOUND"
+
+    def __init__(
+        self,
+        message: str = "Resource not found.",
+        error_code: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Initializes the exception.
+
+        Args:
+            message: Human-readable error message returned to the client.
+            error_code: Overrides the class-level `error_code` if given.
+            details: Extra structured data included in the response body.
         """
-        orig = getattr(exc, "orig", None)
+        super().__init__(
+            message=message,
+            error_code=error_code or self.error_code,
+            details=details,
+        )
 
-        pgcode = getattr(orig, "pgcode", None)
-        if pgcode == "23505":
-            return "Resource already exists.", status.HTTP_409_CONFLICT
-        if pgcode == "23503":
-            return "Referenced resource does not exist.", status.HTTP_409_CONFLICT
-        if pgcode == "23502":
-            return "Required field is missing.", status.HTTP_400_BAD_REQUEST
 
-        return "Data conflict.", status.HTTP_409_CONFLICT
+class UnauthorizedError(AppException):
+    """Base class for HTTP 401 errors."""
+    status_code = 401
+    error_code = "UNAUTHORIZED"
+
+    def __init__(
+        self,
+        message: str = "Authentication failed.",
+        error_code: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Initializes the exception.
+
+        Args:
+            message: Human-readable error message returned to the client.
+            error_code: Overrides the class-level `error_code` if given.
+            details: Extra structured data included in the response body.
+        """
+        super().__init__(
+            message=message,
+            status_code=self.status_code,
+            error_code=error_code or self.error_code,
+            details=details,
+        )
+
+
+class UserNotFoundError(NotFoundError):
+    """Raised when a user cannot be found by internal ID or Telegram ID."""
+
+    def __init__(
+        self,
+        user_id: int | None = None,
+        tg_user_id: int | None = None,
+        message: str | None = None,
+    ) -> None:
+        """Initializes the exception.
+
+        At least one of `user_id` / `tg_user_id` should be provided so the
+        auto-generated message and `details` are meaningful; if neither is
+        given, a generic "not found" message is used.
+
+        Args:
+            user_id: Internal ID of the user that was not found.
+            tg_user_id: Telegram ID of the user that was not found.
+            message: Overrides the auto-generated message if given.
+        """
+        details: dict[str, Any] = {}
+        if user_id is not None:
+            details["user_id"] = user_id
+        if tg_user_id is not None:
+            details["tg_user_id"] = tg_user_id
+
+        if message is None:
+            if user_id is not None:
+                message = f"User with ID {user_id} not found."
+            elif tg_user_id is not None:
+                message = f"Telegram user with ID {tg_user_id} not found."
+            else:
+                message = "User not found."
+
+        super().__init__(
+            message=message,
+            error_code="USER_NOT_FOUND",
+            details=details,
+        )
+
+
+class GifNotFoundError(NotFoundError):
+    """Raised when one or more GIFs cannot be found."""
+
+    def __init__(
+        self,
+        gif_id: int | None = None,
+        gif_ids: list[int] | None = None,
+        user_id: int | None = None,
+        tg_user_id: int | None = None,
+        source: str | None = None,
+        message: str | None = None,
+    ) -> None:
+        """Initializes the exception.
+
+        Covers several cases: a single missing GIF (`gif_id`), a batch
+        where some IDs are missing (`gif_ids`), or a user's library simply
+        having no matching GIFs. `user_id` / `tg_user_id` / `source` are
+        added to `details` and to the message when provided, to make the
+        response more specific.
+
+        Args:
+            gif_id: ID of the single GIF that was not found.
+            gif_ids: IDs of the GIFs that were not found, for batch
+                lookups.
+            user_id: Internal ID of the user the lookup was scoped to.
+            tg_user_id: Telegram ID of the user the lookup was scoped to.
+            source: Free-form label identifying which operation raised
+                this error, included in `details` for easier debugging.
+            message: Overrides the auto-generated message if given.
+        """
+        details: dict[str, Any] = {}
+        if gif_id is not None:
+            details["gif_id"] = gif_id
+        if gif_ids:
+            details["gif_ids"] = gif_ids
+        if user_id is not None:
+            details["user_id"] = user_id
+        if tg_user_id is not None:
+            details["tg_user_id"] = tg_user_id
+        if source:
+            details["source"] = source
+
+        if message is None:
+            if gif_ids:
+                message = f"GIFs with IDs {gif_ids} not found"
+            elif gif_id is not None:
+                message = f"GIF with ID {gif_id} not found"
+            else:
+                message = "GIFs not found"
+
+            if user_id is not None:
+                message += f" for user {user_id}."
+            elif tg_user_id is not None:
+                message += f" for Telegram user {tg_user_id}."
+            else:
+                message += "."
+
+        super().__init__(
+            message=message,
+            error_code="GIF_NOT_FOUND",
+            details=details,
+        )
+
+
+class TagNotFoundError(NotFoundError):
+    """Raised when one or more tags cannot be found."""
+
+    def __init__(
+        self,
+        tag_id: int | None = None,
+        user_id: int | None = None,
+        tg_user_id: int | None = None,
+        source: str | None = None,
+        message: str | None = None,
+    ) -> None:
+        """Initializes the exception.
+
+        Args:
+            tag_id: ID of the tag that was not found.
+            user_id: Internal ID of the user the lookup was scoped to.
+            tg_user_id: Telegram ID of the user the lookup was scoped to.
+            source: Free-form label identifying which operation raised
+                this error, included in `details` for easier debugging.
+            message: Overrides the auto-generated message if given.
+        """
+        details: dict[str, Any] = {}
+        if tag_id is not None:
+            details["tag_id"] = tag_id
+        if user_id is not None:
+            details["user_id"] = user_id
+        if tg_user_id is not None:
+            details["tg_user_id"] = tg_user_id
+        if source:
+            details["source"] = source
+
+        if message is None:
+            if tag_id is not None:
+                message = f"Tag with ID {tag_id} not found"
+            else:
+                message = "Tags not found"
+
+            if user_id is not None:
+                message += f" for user {user_id}."
+            elif tg_user_id is not None:
+                message += f" for Telegram user {tg_user_id}."
+            else:
+                message += "."
+
+        super().__init__(
+            message=message,
+            error_code="TAG_NOT_FOUND",
+            details=details,
+        )
+
+
+class InvalidCredentialsError(UnauthorizedError):
+    """Raised when authentication credentials are invalid, expired, or missing."""
+
+    def __init__(
+            self, 
+            message: str = "Invalid credentials."
+    ) -> None:
+        """Initializes the exception.
+
+        Args:
+            message: Human-readable error message returned to the client.
+        """
+        super().__init__(
+            message=message,
+            error_code="INVALID_CREDENTIALS",
+        )

@@ -1,6 +1,6 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from app import settings
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app import settings
 
 DATABASE_URL = (
     f"postgresql+asyncpg://"
@@ -12,9 +12,21 @@ DATABASE_URL = (
 )
 
 engine = create_async_engine(DATABASE_URL)
-AsyncSessionLocal = async_sessionmaker(bind=engine)
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
+    expire_on_commit=False
+)
 
 
 async def get_db():
+    """Yields an async SQLAlchemy session for use as a FastAPI dependency.
+
+    The session is opened for the duration of a single request and closed
+    automatically afterwards. Commit and rollback are the caller's
+    responsibility.
+
+    Yields:
+        AsyncSession: An active database session bound to `engine`.
+    """
     async with AsyncSessionLocal() as db:
         yield db
