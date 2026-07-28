@@ -9,5 +9,5 @@ web_router = APIRouter(
     prefix="/web",
 )
 
-web_router.include_router(users_router, prefix="/users/me", tags=["Web: Users"])
 web_router.include_router(auth_router, prefix="/auth", tags=["Web: Auth"])
+web_router.include_router(users_router, prefix="/users/me", tags=["Web: Users"])

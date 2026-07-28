@@ -190,7 +190,7 @@ class AuthService:
         await self._redis.delete(self._get_refresh_token_jti_key(user_id))
         
         logger.info(
-            "User logged",
+            "User logout",
             extra={
                 "user_id": user_id
             }
