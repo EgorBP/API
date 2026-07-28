@@ -37,10 +37,10 @@
 ### 📦 Структура проекта
 
 ```text
-├── alembic/                # Скрипты и миграции базы данных
+├── alembic/                # Миграции базы данных
 ├── app/                    # Основной код приложения
 │   ├── api/                # Эндпоинты, middleware, зависимости и handlers
-│   │   └── v1/routers/     # Маршруты API (раздельно для web/ и bot/)
+│   │   └── v1/routers/     # Маршруты API (web/, bot/, dev/ и глобальные пути)
 │   ├── core/               # Настройки (Pydantic Settings), DB, Redis, Lifespan
 │   ├── repositories/       # Слой работы с БД (SQLAlchemy)
 │   ├── services/           # Бизнес-логика приложения
@@ -50,25 +50,29 @@
 ├── tests/                  # Тестовый suite (unit, integration, repos, services)
 ├── .github/workflows/      # CI пайплайны GitHub Actions
 ├── Dockerfile              # Сборка образа приложения
-├── docker-compose.yml      # Развёртывание (App + Postgres + Redis + Nginx)
+├── docker-compose.yml      # Развёртывание (Postgres + Redis → Migration → App → Nginx)
 ├── nginx.conf              # Конфигурация Nginx Reverse Proxy
 └── pyproject.toml          # Зависимости проекта
 ```
 
 ---
 
-## ⚙️ Быстрый запуск
+## ⚙️ Запуск приложения
 
-### 1. Клонирование и настройка окружения
+### 1. Клонирование проекта
 ```bash
 git clone https://github.com/EgorBP/API.git
 cd API
 ````
+
+### 2. Настройка окружения
 ```bash
 cp envs/.env.example envs/.env
 cp envs/.env.docker.example envs/.env.docker
 ```
-
+> DEV_MODE позволяет создавать JWT токены через отдельный эндпоинт для любого Telegram ID пользователя.   
+> Для тестов DEV_MODE всегда false.  
+> Для использования настоящей аутентификации через Telegram создайте своего бота в [@BotFather](https://telegram.me/BotFather), замените BOT_TOKEN на ваш токен и задайте адрес вашего сайта в [@BotFather](https://telegram.me/BotFather) → Login Widget.
 
 ### 2. 🐳 Docker Compose
 ```bash
@@ -83,7 +87,8 @@ docker compose up --build
 
 ## 🧪 Тестирование
 
-Проект содержит **168+ асинхронных тестов** (Unit, Integration, Repositories). Необходим Docker.
+Проект содержит **173 асинхронных теста** (Unit, Integration, Repositories).   
+Для запуска необходим работающий Docker.
 
 ```bash
 uv run pytest
