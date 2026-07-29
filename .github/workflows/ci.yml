@@ -2,14 +2,14 @@ name: CI / Run Tests
 
 on:
   push:
-    branches: [ "master", "dev" ]
-  pull_request:
-    branches: [ "master" ]
+    branches: [ "**" ]
+#  pull_request:
+#    branches: [ "master" ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -22,11 +22,11 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install dependencies
-        run: uv sync
-        
       - name: Copy env example
         run: cp ./envs/.env.example ./envs/.env
 
+      - name: Install dependencies
+        run: uv sync --directory ./backend
+        
       - name: Run pytest
-        run: uv run pytest
+        run: uv run --directory ./backend pytest

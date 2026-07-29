@@ -36,7 +36,6 @@ from app.services.user_library import UserLibraryService
 from app.utils.auth import create_access_token
 from tests.helpers import seed_gif_with_tags
 
-
 # --- Containers (one pair for the whole test session) ---------------------
 
 @pytest.fixture(scope="session")

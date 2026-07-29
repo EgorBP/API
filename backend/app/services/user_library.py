@@ -53,7 +53,7 @@ class UserLibraryService:
         Args:
             session: The async SQLAlchemy session for library operations.
             redis: The Redis client used for caching.
-            storage: The storage backend used to save uploaded GIF files.
+            storage: The storage app used to save uploaded GIF files.
         """
         self.storage = storage
         

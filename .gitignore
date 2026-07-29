@@ -1,11 +1,16 @@
-.idea
+.idea/
+.pnpm-store/
 
-.venv
+.env
+.env.docker
 
-envs/.env
-envs/.env.docker
-envs/.env.docker.test
 
-app/test.py
+.venv/
+__pycache__/
 
-media
+
+media/
+
+
+node_modules/
+dist/

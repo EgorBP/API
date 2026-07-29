@@ -3,7 +3,6 @@ guarded by the shared `X-Secret-Key` header.
 """
 
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.helpers import GIF_BYTES, MP4_BYTES
 

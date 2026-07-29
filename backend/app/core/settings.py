@@ -50,11 +50,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     REFRESH_TOKEN_EXPIRE_DAYS: int
 
-    BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
+    BASE_DIR: Path = Path(__file__).resolve().parents[3]
     MEDIA_DIR: Path = BASE_DIR / "media" / "gifs"
 
     model_config = SettingsConfigDict(
-        env_file="envs/.env",
+        env_file=f"{BASE_DIR}/envs/.env",
         extra="ignore"
     )
 

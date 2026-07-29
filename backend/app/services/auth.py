@@ -6,7 +6,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import InvalidCredentialsError
-from app.core.settings import settings
+from app import settings
 from app.schemas.auth import TelegramAuthSchema, TokenResponseSchema
 from app.services.user import UserService
 from app.utils.auth import (
