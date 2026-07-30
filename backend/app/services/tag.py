@@ -25,7 +25,8 @@ class TagService:
         self._session = session
         self._redis = redis
 
-        self._base_cache_ttl = 180
+        # self._base_cache_ttl = 180
+        self._base_cache_ttl = 30
 
     async def get_popular(
             self

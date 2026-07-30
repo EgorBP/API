@@ -33,14 +33,16 @@ async def lifespan(app: FastAPI):
     gifs_task = asyncio.create_task(
         recalculate_popular_gifs_loop(
             redis=app.state.redis,
-            recalc_after=300,
+            # recalc_after=300,
+            recalc_after=30,
             limit=100
         )
     )
     tags_task = asyncio.create_task(
         recalculate_popular_tags_loop(
             redis=app.state.redis,
-            recalc_after=300,
+            # recalc_after=300,
+            recalc_after=30,
             limit=100
         )
     )

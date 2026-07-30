@@ -2,7 +2,6 @@ import { DEV_AUTH_ENDPOINT, resolveApiPath } from '../config.js';
 
 const TOKENS_KEY = 'auth_tokens';
 
-// --- Работа с локальным хранилищем токенов ---
 export function getStoredTokens() {
   try {
     const raw = localStorage.getItem(TOKENS_KEY);
@@ -14,12 +13,17 @@ export function getStoredTokens() {
 
 export function setStoredTokens(tokens) {
   if (tokens) {
-    localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens));
+    const existing = getStoredTokens() || {};
+    const updated = {
+      ...existing,
+      ...tokens,
+    };
+    localStorage.setItem(TOKENS_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('auth:tokens-changed', { detail: updated }));
   } else {
     localStorage.removeItem(TOKENS_KEY);
+    window.dispatchEvent(new CustomEvent('auth:tokens-changed', { detail: null }));
   }
-  // Уведомляем хуки/компоненты об изменении токена
-  window.dispatchEvent(new CustomEvent('auth:tokens-changed', { detail: tokens }));
 }
 
 export function clearStoredTokens() {
@@ -63,7 +67,13 @@ async function parseResponse(response) {
   return response.text();
 }
 
-// --- Защита от параллельных запросов на Refresh ---
+function extractErrorMessage(payload, defaultMsg) {
+  if (Array.isArray(payload?.detail)) {
+    return payload.detail.map((item) => item?.msg || JSON.stringify(item)).join('; ');
+  }
+  return payload?.detail || payload?.message || defaultMsg;
+}
+
 let isRefreshing = false;
 let refreshSubscribers = [];
 
@@ -71,22 +81,16 @@ function subscribeTokenRefresh(callback) {
   refreshSubscribers.push(callback);
 }
 
-function onRefreshed(newToken) {
-  refreshSubscribers.forEach((callback) => callback(newToken));
-  refreshSubscribers = [];
-}
-
-function onRefreshFailed(error) {
-  refreshSubscribers.forEach((callback) => callback(null, error));
+function onRefreshed(newToken, error = null) {
+  refreshSubscribers.forEach((callback) => callback(newToken, error));
   refreshSubscribers = [];
 }
 
 async function request(path, options = {}) {
   const { token, query, headers, body, _isRetry, ...rest } = options;
   
-  // Авто-подстановка токена из хранилища, если он не передан явно
   const storedTokens = getStoredTokens();
-  const effectiveToken = token || storedTokens?.access_token;
+  const effectiveToken = storedTokens?.access_token || token;
 
   const url = new URL(resolveApiPath(path), window.location.origin);
   appendQuery(url, query);
@@ -99,11 +103,16 @@ async function request(path, options = {}) {
     requestHeaders.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(url, {
-    ...rest,
-    headers: requestHeaders,
-    body: body && !(body instanceof FormData) ? JSON.stringify(body) : body,
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      ...rest,
+      headers: requestHeaders,
+      body: body && !(body instanceof FormData) ? JSON.stringify(body) : body,
+    });
+  } catch (netErr) {
+    throw new ApiError(netErr.message || 'Ошибка подключения к серверу', 0, null);
+  }
 
   const payload = await parseResponse(response);
 
@@ -113,55 +122,50 @@ async function request(path, options = {}) {
       path.includes('/auth/telegram') ||
       path.includes('/auth/dev');
 
-    // Перехват 401 ошибки для авто-ревалидации токена
     if (response.status === 401 && !_isRetry && !isAuthEndpoint) {
       const refreshToken = storedTokens?.refresh_token;
 
-      if (refreshToken) {
-        if (!isRefreshing) {
-          isRefreshing = true;
+      if (!refreshToken) {
+        clearStoredTokens();
+        const detail = extractErrorMessage(payload, response.statusText);
+        throw new ApiError(detail || 'Сессия истекла. Войдите заново.', 401, payload);
+      }
 
-          try {
-            // Вызываем метод рефреша
-            const newTokens = await api.auth.refresh(refreshToken);
-            setStoredTokens(newTokens);
-            isRefreshing = false;
-            onRefreshed(newTokens.access_token);
-          } catch (refreshErr) {
-            isRefreshing = false;
-            clearStoredTokens();
-            onRefreshFailed(refreshErr);
-
-            const detail = Array.isArray(payload?.detail)
-              ? payload.detail.map((item) => item.msg).join('; ')
-              : payload?.detail || payload?.message || response.statusText;
-            throw new ApiError(detail || 'Сессия истекла. Войдите заново.', response.status, payload);
-          }
-        }
-
-        // Если рефреш уже выполняется — ждем его завершения и повторяем текущий запрос
+      if (isRefreshing) {
         return new Promise((resolve, reject) => {
           subscribeTokenRefresh((newToken, err) => {
             if (err || !newToken) {
-              const detail = Array.isArray(payload?.detail)
-                ? payload.detail.map((item) => item.msg).join('; ')
-                : payload?.detail || payload?.message || response.statusText;
-              reject(new ApiError(detail || 'API request failed', response.status, payload));
+              const detail = extractErrorMessage(payload, response.statusText);
+              reject(new ApiError(detail || 'Сессия истекла. Войдите заново.', 401, payload));
             } else {
-              // Повторяем запрос с новым токеном
               resolve(request(path, { ...options, token: newToken, _isRetry: true }));
             }
           });
         });
-      } else {
+      }
+
+      isRefreshing = true;
+
+      try {
+        const newTokens = await api.auth.refresh(refreshToken);
+        setStoredTokens(newTokens);
+        isRefreshing = false;
+
+        onRefreshed(newTokens.access_token, null);
+
+        return request(path, { ...options, token: newTokens.access_token, _isRetry: true });
+      } catch (refreshErr) {
+        isRefreshing = false;
         clearStoredTokens();
+        onRefreshed(null, refreshErr);
+
+        const detail = extractErrorMessage(payload, response.statusText);
+        throw new ApiError(detail || 'Сессия истекла. Войдите заново.', 401, payload);
       }
     }
 
-    const detail = Array.isArray(payload?.detail)
-      ? payload.detail.map((item) => item.msg).join('; ')
-      : payload?.detail || payload?.message || response.statusText;
-    throw new ApiError(detail || 'API request failed', response.status, payload);
+    const detail = extractErrorMessage(payload, response.statusText);
+    throw new ApiError(detail || 'Ошибка выполнения запроса', response.status, payload);
   }
 
   return payload;
@@ -177,7 +181,7 @@ function makeUploadForm(file, tags) {
 export const api = {
   auth: {
     telegram: async (payload) => {
-      const res = await request('/v1/web/auth/telegram', {
+      const res = await request('/api/v1/web/auth/telegram', {
         method: 'POST',
         body: payload,
       });
@@ -191,48 +195,48 @@ export const api = {
       return res;
     },
     refresh: (refreshToken) =>
-      request('/v1/web/auth/refresh', {
+      request('/api/v1/web/auth/refresh', {
         method: 'POST',
         body: { refresh_token: refreshToken },
       }),
     logout: async (token) => {
       try {
-        await request('/v1/web/auth/logout', { method: 'POST', token });
+        await request('/api/v1/web/auth/logout', { method: 'POST', token });
       } finally {
         clearStoredTokens();
       }
     },
   },
   web: {
-    me: (token) => request('/v1/web/users/me', { token }),
-    deleteMe: (token) => request('/v1/web/users/me', { method: 'DELETE', token }),
-    count: (token) => request('/v1/web/users/me/gifs/count', { token }),
-    tags: (token) => request('/v1/web/users/me/tags/all', { token }),
-    gifs: (token, query) => request('/v1/web/users/me/gifs', { token, query }),
+    me: (token) => request('/api/v1/web/users/me', { token }),
+    deleteMe: (token) => request('/api/v1/web/users/me', { method: 'DELETE', token }),
+    count: (token) => request('/api/v1/web/users/me/gifs/count', { token }),
+    tags: (token) => request('/api/v1/web/users/me/tags/all', { token }),
+    gifs: (token, query) => request('/api/v1/web/users/me/gifs', { token, query }),
     deleteGifs: (token, gifIds) =>
-      request('/v1/web/users/me/gifs', {
+      request('/api/v1/web/users/me/gifs', {
         method: 'DELETE',
         token,
         query: { gif_ids: gifIds },
       }),
     upload: (token, file, tags) =>
-      request('/v1/web/users/me/gifs/new', {
+      request('/api/v1/web/users/me/gifs/new', {
         method: 'POST',
         token,
         body: makeUploadForm(file, tags),
       }),
     updateTags: (token, gifId, tags) =>
-      request(`/v1/web/users/me/gifs/${gifId}/tags`, {
+      request(`/api/v1/web/users/me/gifs/${gifId}/tags`, {
         method: 'PUT',
         token,
         body: tags,
       }),
   },
   public: {
-    searchGifs: (query) => request('/v1/gifs', { query }),
-    popularGifs: () => request('/v1/gifs/popular'),
+    searchGifs: (query) => request('/api/v1/gifs', { query }),
+    popularGifs: () => request('/api/v1/gifs/popular'),
     popularTagsForGif: (gifId, limit) =>
-      request(`/v1/gifs/${gifId}/popular/tags`, { query: { limit } }),
-    popularTags: () => request('/v1/tags/popular'),
+      request(`/api/v1/gifs/${gifId}/popular/tags`, { query: { limit } }),
+    popularTags: () => request('/api/v1/tags/popular'),
   },
 };

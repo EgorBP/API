@@ -23,7 +23,7 @@ jobs:
           python-version: "3.13"
 
       - name: Copy env example
-        run: cp ./envs/.env.example ./envs/.env
+        run: cp ./envs/.env.example ./.env
 
       - name: Install dependencies
         run: uv sync --directory ./backend

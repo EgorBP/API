@@ -30,7 +30,8 @@ class GifService:
         self._session = session
         self._redis = redis
         
-        self._base_cache_ttl = 60
+        # self._base_cache_ttl = 60
+        self._base_cache_ttl = 30
 
     async def get_popular(
             self

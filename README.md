@@ -1,4 +1,4 @@
-# 🚀 Async FastAPI Service
+# 🚀 Async GIF Storage API
 
 [![CI Pipeline](https://github.com/EgorBP/API/actions/workflows/ci.yml/badge.svg)](https://github.com/EgorBP/API/actions/workflows/ci.yml)
 

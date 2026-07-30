@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckSquare,
   Database,
@@ -14,8 +14,9 @@ import {
   Upload,
   User,
   X,
+  Check,
 } from 'lucide-react';
-import { api, clearStoredTokens, getStoredTokens, setStoredTokens } from './api/client.js';
+import { api, getStoredTokens, setStoredTokens } from './api/client.js';
 import { DEV_MODE, TELEGRAM_BOT_USERNAME, resolveMediaUrl } from './config.js';
 import { useAsyncAction } from './hooks/useAsyncAction.js';
 import { useTokens } from './hooks/useTokens.js';
@@ -33,6 +34,7 @@ const defaultLibrary = {
 const PAGE_SIZE = 24;
 
 const ACCENT_THEMES = [
+  { id: 'mono', label: 'Monochrome' },
   { id: 'teal', label: 'Teal' },
   { id: 'orange', label: 'Orange' },
   { id: 'blue', label: 'Blue' },
@@ -47,7 +49,104 @@ function toQuery(form) {
   };
 }
 
-/** ИНТЕРАКТИВНОЕ ПОЛЕ ВВОДА ТЕГОВ С КНОПКОЙ ПОЛНОЙ ОЧИСТКИ */
+function UserProfileMenu({ profile, onLogout, devMode }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [nameMode, setNameMode] = useState(() => localStorage.getItem('profile_display_mode') || 'username');
+  const [devIdMode, setDevIdMode] = useState(() => localStorage.getItem('profile_dev_id_mode') || 'id');
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    localStorage.setItem('profile_display_mode', nameMode);
+  }, [nameMode]);
+
+  useEffect(() => {
+    localStorage.setItem('profile_dev_id_mode', devIdMode);
+  }, [devIdMode]);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  const avatar = profile?.photo_url || profile?.avatar || profile?.photoUrl;
+  const username = profile?.username ? `@${profile.username}` : 'Юзернейм';
+  const firstName = profile?.first_name || profile?.username || 'Имя';
+  const userId = profile?.id !== undefined ? `ID: ${profile.id}` : 'ID: --';
+  const tgId = profile?.telegram_id || profile?.tg_id ? `TG ID: ${profile.telegram_id || profile.tg_id}` : userId;
+
+  let displayText = '';
+  if (devMode) {
+    displayText = devIdMode === 'id' ? userId : tgId;
+  } else {
+    displayText = nameMode === 'username' ? username : firstName;
+  }
+
+  function toggleDisplayMode() {
+    if (devMode) {
+      setDevIdMode((prev) => (prev === 'id' ? 'tg_id' : 'id'));
+    } else {
+      setNameMode((prev) => (prev === 'username' ? 'name' : 'username'));
+    }
+  }
+
+  let switchButtonText = '';
+  if (devMode) {
+    switchButtonText = devIdMode === 'id' ? 'Сменить на Telegram ID' : 'Сменить на User ID';
+  } else {
+    switchButtonText = nameMode === 'username' ? 'Сменить на имя' : 'Сменить на юзернейм';
+  }
+
+  return (
+    <div className="userProfileMenuContainer" ref={containerRef}>
+      <button
+        type="button"
+        className="userProfileButton"
+        onClick={() => setIsOpen((prev) => !prev)}
+        title="Профиль пользователя"
+      >
+        {avatar ? (
+          <img src={avatar} alt="Аватар" className="userAvatarImg" />
+        ) : (
+          <div className="userAvatarFallback">
+            <User size={18} />
+          </div>
+        )}
+        <span className="userProfileText">{displayText}</span>
+      </button>
+
+      {isOpen && (
+        <div className="userProfileDropdown">
+          <button
+            type="button"
+            className="dropdownMenuItem"
+            onClick={toggleDisplayMode}
+          >
+            <User size={16} />
+            <span>{switchButtonText}</span>
+          </button>
+          <div className="dropdownDivider" />
+          <button
+            type="button"
+            className="dropdownMenuItem danger"
+            onClick={() => {
+              setIsOpen(false);
+              onLogout();
+            }}
+          >
+            <LogOut size={16} />
+            <span>Выйти</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TagInput({ tags = '', onChange, placeholder = 'Введите теги через запятую...' }) {
   const [inputValue, setInputValue] = useState('');
   const inputRef = useRef(null);
@@ -275,11 +374,14 @@ function GifModal({
   onSaveTags,
   onDelete,
   onTagClick,
+  onAddToLibrary,
+  isAdded = false,
 }) {
   const [tagsInput, setTagsInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [localError, setLocalError] = useState('');
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     if (gif) {
@@ -287,6 +389,7 @@ function GifModal({
       setLocalError('');
       setSaving(false);
       setDeleting(false);
+      setAdding(false);
     }
   }, [gif, tags]);
 
@@ -339,15 +442,37 @@ function GifModal({
     }
   }
 
+  async function handleAdd() {
+    if (!gif || !onAddToLibrary) return;
+    setAdding(true);
+    setLocalError('');
+    try {
+      await onAddToLibrary(gif.id, tags || []);
+    } catch (err) {
+      setLocalError(err.message || 'Не удалось добавить гифку.');
+    } finally {
+      setAdding(false);
+    }
+  }
+
   return (
     <div className="modalOverlay" onClick={onClose}>
       <div className="modalContent" onClick={(event) => event.stopPropagation()}>
-        <button className="modalClose" type="button" onClick={onClose} aria-label="Закрыть">
-          <X size={18} />
-        </button>
         <div className="modalMedia">
           <GifImage gif={gif} />
+
+          {onAddToLibrary && (
+            <button
+              type="button"
+              className={`modalAdd ${isAdded ? 'success' : ''}`}
+              onClick={handleAdd}
+              disabled={isAdded || adding || loading}
+            >
+              {isAdded ? <Check size={18} /> : <Plus size={18} />}
+            </button>
+          )}
         </div>
+
         <div className="modalTags">
           {editable ? (
             <div className="modalEdit">
@@ -546,7 +671,7 @@ function TelegramLoginWidget({ onLogin }) {
   );
 }
 
-function AuthModal({ isOpen, onClose, setTokens, refreshProfile, onSuccess, onTelegramLogin }) {
+function AuthModal({ isOpen, onClose, setTokens, refreshProfile, onSuccess, onTelegramLogin, onExtraSave }) {
   const [devTgId, setDevTgId] = useState('12345678');
   const action = useAsyncAction();
 
@@ -554,13 +679,21 @@ function AuthModal({ isOpen, onClose, setTokens, refreshProfile, onSuccess, onTe
 
   async function submitDevLogin(event) {
     event.preventDefault();
+    const extra = {
+      photo_url: null,
+      username: `dev_${devTgId}`,
+      first_name: `Dev User ${devTgId}`,
+      id: devTgId,
+      telegram_id: devTgId,
+    };
+    if (onExtraSave) onExtraSave(extra);
+
     const nextTokens = await action.run(
-      () => api.auth.devLogin(devTgId),
-      `Вы вошли как тестовый пользователь ID: ${devTgId}.`,
+      () => api.auth.devLogin(devTgId)
     );
     setStoredTokens(nextTokens);
     if (setTokens) setTokens(nextTokens);
-    refreshProfile(nextTokens.access_token);
+    await refreshProfile(nextTokens.access_token, extra);
     if (onSuccess) onSuccess();
   }
 
@@ -602,7 +735,7 @@ function AuthModal({ isOpen, onClose, setTokens, refreshProfile, onSuccess, onTe
   );
 }
 
-function PopularPage() {
+function PopularPage({ tokens, onOpenAuthModal }) {
   const [search, setSearch] = useState(defaultSearch);
   const [results, setResults] = useState(null);
   const [popularGifs, setPopularGifs] = useState(null);
@@ -610,6 +743,7 @@ function PopularPage() {
   const [modalGif, setModalGif] = useState(null);
   const [modalTags, setModalTags] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
+  const [addedGifIds, setAddedGifIds] = useState(new Set());
   const action = useAsyncAction();
 
   async function submitSearch(event) {
@@ -677,6 +811,18 @@ function PopularPage() {
     runTagSearch(tag);
   }
 
+  const handleAddToLibrary = useCallback(async (gifId, tags) => {
+    const activeToken = getStoredTokens()?.access_token || tokens?.access_token;
+    if (!activeToken) {
+      onOpenAuthModal();
+      return;
+    }
+    await action.run(async () => {
+      await api.web.updateTags(activeToken, gifId, tags);
+      setAddedGifIds(prev => new Set(prev).add(gifId));
+    }, 'Гифка добавлена в вашу библиотеку!');
+  }, [tokens, onOpenAuthModal, action]);
+
   const visibleGifs = results?.data || popularGifs?.gifs;
 
   return (
@@ -686,6 +832,16 @@ function PopularPage() {
           <span className="eyebrow">Публичная библиотека</span>
           <h2>Что сейчас в тренде</h2>
           <p>Подборка популярных гифок. Пользуйтесь поиском по тегам для быстрой навигации.</p>
+          {DEV_MODE && (
+          <p>
+            Данные кешируются автоматически.
+            Для тестов обновление кэша и пересчет популярных данных происходит через 30с.
+            В отличие от кеша пользователя этот кэш не инвалидируется автоматически.<br />
+            Время кеширования настраивается у каждого сервиса отдельно. 
+            Время перерасчета популярных тегов и гифок можно настроить в lifespan.<br />
+            Эта надпись видна только при использовании DEV_MODE.
+          </p>
+        )}
         </div>
       </section>
 
@@ -746,47 +902,52 @@ function PopularPage() {
         tagsEmptyHint="Популярных тегов пока нет."
         onClose={closeGifModal}
         onTagClick={handleTagClick}
+        onAddToLibrary={handleAddToLibrary}
+        isAdded={addedGifIds.has(modalGif?.id)}
       />
     </div>
   );
 }
 
-function UserPage({ tokens, profile, setProfile, clearTokens }) {
+function UserPage({ tokens, profile, setProfile, clearTokens, userExtra }) {
   const [filters, setFilters] = useState(defaultLibrary);
   const [library, setLibrary] = useState(null);
   const [modalGif, setModalGif] = useState(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   
-  /* СОСТОЯНИЕ ДЛЯ МАССОВОГО УДАЛЕНИЯ */
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
 
   const action = useAsyncAction();
-  const logoutAction = useAsyncAction();
-
   const authenticated = Boolean(tokens?.access_token);
 
   async function fetchDashboardData() {
+    const activeToken = getStoredTokens()?.access_token || tokens?.access_token;
+    if (!activeToken) return;
+
     const [me, count, tags, gifs] = await Promise.all([
-      api.web.me(tokens.access_token),
-      api.web.count(tokens.access_token),
-      api.web.tags(tokens.access_token),
-      api.web.gifs(tokens.access_token, toQuery(filters)),
+      api.web.me(activeToken),
+      api.web.count(activeToken),
+      api.web.tags(activeToken),
+      api.web.gifs(activeToken, toQuery(filters)),
     ]);
-    setProfile({ ...me, gifCount: count, tags });
+
+    setProfile({ ...userExtra, ...me, gifCount: count, tags });
     setLibrary(gifs);
   }
 
   async function loadDashboard() {
-    if (!authenticated) return;
+    const activeToken = getStoredTokens()?.access_token || tokens?.access_token;
+    if (!activeToken) return;
     await action.run(fetchDashboardData);
   }
 
   async function loadMoreLibrary() {
-    if (!library?.pagination?.has_next) return;
+    const activeToken = getStoredTokens()?.access_token || tokens?.access_token;
+    if (!library?.pagination?.has_next || !activeToken) return;
 
     const payload = await action.run(() =>
-      api.web.gifs(tokens.access_token, { ...toQuery(filters), cursor: library.pagination.next_cursor }),
+      api.web.gifs(activeToken, { ...toQuery(filters), cursor: library.pagination.next_cursor }),
     );
     setLibrary((current) => ({
       data: [...(current?.data || []), ...payload.data],
@@ -794,37 +955,35 @@ function UserPage({ tokens, profile, setProfile, clearTokens }) {
     }));
   }
 
-  async function refreshLibrarySilently() {
-    if (!authenticated) return;
-    try {
-      await fetchDashboardData();
-    } catch (err) {
-      action.setError(err.status ? `${err.status}: ${err.message}` : err.message);
-    }
-  }
-
   useEffect(() => {
-    if (authenticated) {
-      refreshLibrarySilently();
+    const activeToken = getStoredTokens()?.access_token || tokens?.access_token;
+    if (activeToken) {
+      loadDashboard();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authenticated]);
+  }, [authenticated, tokens?.access_token]);
 
   async function handleUpload(file, tags) {
-    await api.web.upload(tokens.access_token, file, tags);
+    const activeToken = getStoredTokens()?.access_token || tokens?.access_token;
+    if (!activeToken) return;
+    await api.web.upload(activeToken, file, tags);
     action.setMessage('Файл успешно загружен.');
-    refreshLibrarySilently();
+    fetchDashboardData();
   }
 
   async function runTagSearch(tag) {
+    const activeToken = getStoredTokens()?.access_token || tokens?.access_token;
+    if (!activeToken) return;
     const nextFilters = { ...filters, tags: tag };
     setFilters(nextFilters);
-    const payload = await action.run(() => api.web.gifs(tokens.access_token, toQuery(nextFilters)));
+    const payload = await action.run(() => api.web.gifs(activeToken, toQuery(nextFilters)));
     setLibrary(payload);
   }
 
   async function saveGifTags(gifId, tagsArray) {
-    await api.web.updateTags(tokens.access_token, gifId, tagsArray);
+    const activeToken = getStoredTokens()?.access_token || tokens?.access_token;
+    if (!activeToken) return;
+    await api.web.updateTags(activeToken, gifId, tagsArray);
     setLibrary((current) =>
       current
         ? {
@@ -837,7 +996,9 @@ function UserPage({ tokens, profile, setProfile, clearTokens }) {
   }
 
   async function removeGifFromLibrary(gifId) {
-    await api.web.deleteGifs(tokens.access_token, [gifId]);
+    const activeToken = getStoredTokens()?.access_token || tokens?.access_token;
+    if (!activeToken) return;
+    await api.web.deleteGifs(activeToken, [gifId]);
     setLibrary((current) =>
       current
         ? {
@@ -850,7 +1011,6 @@ function UserPage({ tokens, profile, setProfile, clearTokens }) {
     action.setMessage('Гифка удалена.');
   }
 
-  /* ЛОГИКА МАССОВОГО УДАЛЕНИЯ */
   function toggleSelectGif(gifId) {
     setSelectedIds((prev) =>
       prev.includes(gifId) ? prev.filter((id) => id !== gifId) : [...prev, gifId],
@@ -867,13 +1027,14 @@ function UserPage({ tokens, profile, setProfile, clearTokens }) {
   }
 
   async function handleBatchDelete() {
-    if (selectedIds.length === 0) return;
+    const activeToken = getStoredTokens()?.access_token || tokens?.access_token;
+    if (selectedIds.length === 0 || !activeToken) return;
     if (!window.confirm(`Вы уверены, что хотите удалить выбранные гифки (${selectedIds.length} шт.)?`)) {
       return;
     }
 
     await action.run(async () => {
-      await api.web.deleteGifs(tokens.access_token, selectedIds);
+      await api.web.deleteGifs(activeToken, selectedIds);
       setLibrary((current) =>
         current
           ? {
@@ -892,27 +1053,22 @@ function UserPage({ tokens, profile, setProfile, clearTokens }) {
     }, `Успешно удалено гифок: ${selectedIds.length}`);
   }
 
-  async function handleLogout() {
-    if (!window.confirm('Вы действительно хотите выйти из аккаунта?')) {
-      return;
-    }
-    if (tokens?.access_token) {
-      await logoutAction.run(() => api.auth.logout(tokens.access_token), 'Вы вышли из аккаунта.');
-    }
-    clearTokens();
-  }
-
   async function handleDeleteAccount() {
+    const activeToken = getStoredTokens()?.access_token || tokens?.access_token;
+    if (!activeToken) return;
     if (!window.confirm('Вы уверены, что хотите НАВСЕГДА удалить свой аккаунт и все гифки?')) {
       return;
     }
-    await action.run(() => api.web.deleteMe(tokens.access_token), 'Аккаунт удален.');
+    await action.run(() => api.web.deleteMe(activeToken), 'Аккаунт удален.');
     clearTokens();
     setProfile(null);
     setLibrary(null);
   }
 
-  const displayName = profile?.first_name || profile?.username || 'Моя библиотека';
+  const displayName = DEV_MODE
+    ? `ID: ${profile?.id || profile?.telegram_id || '---'}`
+    : (profile?.first_name || (profile?.username ? `@${profile.username}` : 'Моя библиотека'));
+
   const userTags = Array.isArray(profile?.tags) ? profile.tags : profile?.tags?.tags || [];
 
   return (
@@ -927,10 +1083,6 @@ function UserPage({ tokens, profile, setProfile, clearTokens }) {
           <button className="dangerGhost" type="button" onClick={handleDeleteAccount} disabled={!authenticated || action.loading}>
             <Trash2 size={16} />
             Удалить аккаунт
-          </button>
-          <button className="secondaryButton" type="button" onClick={handleLogout} disabled={logoutAction.loading}>
-            <LogOut size={16} />
-            Выйти
           </button>
         </div>
       </section>
@@ -968,7 +1120,6 @@ function UserPage({ tokens, profile, setProfile, clearTokens }) {
           </form>
 
           <Status action={action} />
-          <Status action={logoutAction} />
 
           <div className="libraryHeader">
             <div className="totalCount">
@@ -995,7 +1146,6 @@ function UserPage({ tokens, profile, setProfile, clearTokens }) {
             </div>
           </div>
 
-          {/* ПАНЕЛЬ МАССОВЫХ ДЕЙСТВИЙ */}
           {isSelectMode && (
             <div className="batchActionsBar panel">
               <span>Выбрано: <strong>{selectedIds.length}</strong></span>
@@ -1055,11 +1205,19 @@ function UserPage({ tokens, profile, setProfile, clearTokens }) {
 export default function App() {
   const { tokens, setTokens, clearTokens } = useTokens();
   const [profile, setProfile] = useState(null);
+  const [userExtra, setUserExtra] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('gifs_user_extra')) || {};
+    } catch {
+      return {};
+    }
+  });
 
   const [page, setPage] = useState(() => localStorage.getItem('gifs-api-demo.activePage') || 'popular');
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('gifs-api-demo.theme') || 'light');
-  const [accent, setAccent] = useState(() => localStorage.getItem('gifs-api-demo.accent') || 'teal');
+  const [accent, setAccent] = useState(() => localStorage.getItem('gifs-api-demo.accent') || 'mono');
+  
   const profileAction = useAsyncAction();
   const loginAction = useAsyncAction();
 
@@ -1087,31 +1245,40 @@ export default function App() {
     localStorage.setItem('gifs-api-demo.accent', accent);
   }, [accent]);
 
-  async function refreshProfile(token = tokens?.access_token) {
-    if (!token) return;
+  function saveExtraInfo(extra) {
+    setUserExtra(extra);
+    localStorage.setItem('gifs_user_extra', JSON.stringify(extra));
+  }
+
+  async function refreshProfile(token = tokens?.access_token, extraOverride = null) {
+    const activeToken = getStoredTokens()?.access_token || token;
+    if (!activeToken) return;
 
     try {
       const [me, count, tags] = await profileAction.run(() =>
-        Promise.all([api.web.me(token), api.web.count(token), api.web.tags(token)]),
+        Promise.all([api.web.me(activeToken), api.web.count(activeToken), api.web.tags(activeToken)]),
       );
-      setProfile({ ...me, gifCount: count, tags });
+      const currentExtra = extraOverride || userExtra;
+      setProfile({ ...currentExtra, ...me, gifCount: count, tags });
     } catch (err) {
       if (err?.status === 401 || err?.status === 403) {
-        clearTokens();
+        handleLogout(false);
       }
     }
   }
 
+  // Загружаем профиль сразу при старте приложения, если пользователь авторизован
   useEffect(() => {
-    if (tokens?.access_token) {
-      refreshProfile();
-    } else {
+    const activeToken = getStoredTokens()?.access_token || tokens?.access_token;
+    if (!activeToken) {
       setProfile(null);
       if (page === 'user') {
         setPage('popular');
       }
+    } else if (!profile) {
+      refreshProfile(activeToken);
     }
-  }, [tokens?.access_token]);
+  }, [tokens?.access_token, page]);
 
   function handleNavClick(id) {
     if (id === 'user' && !authenticated) {
@@ -1122,10 +1289,19 @@ export default function App() {
   }
 
   async function handleTelegramLogin(user) {
+    const extra = {
+      photo_url: user.photo_url,
+      username: user.username,
+      first_name: user.first_name,
+      id: user.id,
+      telegram_id: user.id,
+    };
+    saveExtraInfo(extra);
+
     const nextTokens = await loginAction.run(() => api.auth.telegram(user));
     setStoredTokens(nextTokens);
     setTokens(nextTokens);
-    refreshProfile(nextTokens.access_token);
+    await refreshProfile(nextTokens.access_token, extra);
     setIsAuthOpen(false);
     setPage('user');
   }
@@ -1133,6 +1309,24 @@ export default function App() {
   function handleLoginSuccess() {
     setIsAuthOpen(false);
     setPage('user');
+  }
+
+  async function handleLogout(confirm = true) {
+    if (confirm && !window.confirm('Вы действительно хотите выйти из аккаунта?')) {
+      return;
+    }
+    if (tokens?.access_token) {
+      try {
+        await api.auth.logout(tokens.access_token);
+      } catch {
+        // Игнорируем ошибки при выходе
+      }
+    }
+    clearTokens();
+    localStorage.removeItem('gifs_user_extra');
+    setUserExtra({});
+    setProfile(null);
+    setPage('popular');
   }
 
   return (
@@ -1156,6 +1350,14 @@ export default function App() {
           ))}
         </nav>
         <div className="topBarControls">
+          {authenticated && (
+            <UserProfileMenu
+              profile={profile}
+              onLogout={handleLogout}
+              devMode={DEV_MODE}
+            />
+          )}
+
           <select
             className="accentSelect"
             value={accent}
@@ -1182,13 +1384,14 @@ export default function App() {
         <Status action={profileAction} />
         <Status action={loginAction} />
         {page === 'popular' ? (
-          <PopularPage />
+          <PopularPage tokens={tokens} onOpenAuthModal={() => setIsAuthOpen(true)} />
         ) : (
           <UserPage
             tokens={tokens}
             profile={profile}
             setProfile={setProfile}
             clearTokens={clearTokens}
+            userExtra={userExtra}
           />
         )}
 
@@ -1199,6 +1402,7 @@ export default function App() {
           refreshProfile={refreshProfile}
           onSuccess={handleLoginSuccess}
           onTelegramLogin={handleTelegramLogin}
+          onExtraSave={saveExtraInfo}
         />
       </main>
     </div>
