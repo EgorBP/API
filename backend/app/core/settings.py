@@ -27,7 +27,7 @@ class Settings(BaseSettings):
         JWT_ALGORITHM: Algorithm used for JWT signing (e.g. "HS256").
         ACCESS_TOKEN_EXPIRE_MINUTES: Access token lifetime, in minutes.
         REFRESH_TOKEN_EXPIRE_DAYS: Refresh token lifetime, in days.
-        BASE_DIR: Absolute path to the project root.
+        BASE_DIR: Absolute path to the project backend directory.
         MEDIA_DIR: Absolute path to the directory where GIF/MP4 files are
             stored.
     """
@@ -50,11 +50,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     REFRESH_TOKEN_EXPIRE_DAYS: int
 
-    BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
+    BASE_DIR: Path = Path(__file__).resolve().parents[2]
     MEDIA_DIR: Path = BASE_DIR / "media" / "gifs"
 
     model_config = SettingsConfigDict(
-        env_file="envs/.env",
+        env_file=f"{BASE_DIR}/../.env",  # For local usage
         extra="ignore"
     )
 

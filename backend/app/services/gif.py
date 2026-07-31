@@ -3,6 +3,7 @@ import logging
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import settings
 from app.repositories import GifRepository
 from app.schemas.common import CursorPaginatedResponse, CursorPaginationMeta, SortOrder
 from app.schemas.gif import PopularGifsOut, RawGifOut
@@ -31,6 +32,9 @@ class GifService:
         self._redis = redis
         
         self._base_cache_ttl = 60
+        
+        if settings.DEV_MODE:
+            self._base_cache_ttl = 30
 
     async def get_popular(
             self

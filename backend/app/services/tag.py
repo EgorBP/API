@@ -3,6 +3,7 @@ import logging
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import settings
 from app.repositories import TagRepository
 from app.schemas.tag import PopularTagsOut, RawTagsOut
 
@@ -26,6 +27,9 @@ class TagService:
         self._redis = redis
 
         self._base_cache_ttl = 180
+        
+        if settings.DEV_MODE:
+            self._base_cache_ttl = 30
 
     async def get_popular(
             self

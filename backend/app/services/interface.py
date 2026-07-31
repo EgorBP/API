@@ -4,9 +4,9 @@ from fastapi import UploadFile
 
 
 class StorageProvider(Protocol):
-    """Interface that any file storage backend in the system must implement.
+    """Interface that any file storage app in the system must implement.
 
-    Allows swapping the storage backend (local disk, S3, etc.) without
+    Allows swapping the storage app (local disk, S3, etc.) without
     changing service code — anything conforming to this protocol can be
     passed wherever a `StorageProvider` is expected.
     """
@@ -53,7 +53,7 @@ class StorageProvider(Protocol):
             FileNotFoundError: If no file exists at `file_key`.
             PermissionError: If `file_key` resolves outside the allowed
                 storage directory.
-            RuntimeError: If the storage backend is unreachable or the
+            RuntimeError: If the storage app is unreachable or the
                 deletion otherwise fails.
         """
         ...

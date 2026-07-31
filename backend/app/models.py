@@ -44,7 +44,7 @@ class UserStatus(str, Enum):
 
 
 class Gif(Base):
-    """A single GIF or MP4 file stored on disk (or another storage backend).
+    """A single GIF or MP4 file stored on disk (or another storage app).
 
     A `Gif` row is shared across all users who have it in their library;
     per-user tagging is tracked separately via `UserGifTag`.
