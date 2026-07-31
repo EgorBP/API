@@ -178,7 +178,7 @@ docker compose up --build
 Для запуска необходим работающий Docker. 
 
 ```bash
-uv run pytest
+uv run --directory ./backend pytest
 ```
 
 > Благодаря `testcontainers` нужные контейнеры поднимаются и останавливаются автоматически.
