@@ -164,8 +164,8 @@ cp envs/.env.docker.example envs/.env.docker
 ```bash
 docker compose up --build
 ```
+> Веб-интерфейс: [`http://127.0.0.1`](http://127.0.0.1)    
 > Доступ к API: [`http://127.0.0.1:8000`](http://127.0.0.1:8000)    
-> Сохраненные GIF: [`http://127.0.0.1/media/gifs/gif_filename`](http://127.0.0.1/media/gifs/) 
 > 
 > Swagger UI: [`http://127.0.0.1:8000/docs`](http://127.0.0.1:8000/docs)    
 > ReDoc: [`http://127.0.0.1:8000/redoc`](http://127.0.0.1:8000/redoc)   
