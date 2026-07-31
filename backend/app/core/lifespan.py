@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app import settings
 from app.core.redis import close_redis_client, create_redis_client
 from app.tasks.gif import recalculate_popular_gifs_loop
 from app.tasks.tag import recalculate_popular_tags_loop
@@ -33,16 +34,14 @@ async def lifespan(app: FastAPI):
     gifs_task = asyncio.create_task(
         recalculate_popular_gifs_loop(
             redis=app.state.redis,
-            # recalc_after=300,
-            recalc_after=30,
+            recalc_after=300 if not settings.DEV_MODE else 30,
             limit=100
         )
     )
     tags_task = asyncio.create_task(
         recalculate_popular_tags_loop(
             redis=app.state.redis,
-            # recalc_after=300,
-            recalc_after=30,
+            recalc_after=300 if not settings.DEV_MODE else 30,
             limit=100
         )
     )
