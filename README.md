@@ -3,7 +3,8 @@
 [![CI Pipeline](https://github.com/EgorBP/API/actions/workflows/ci.yml/badge.svg)](https://github.com/EgorBP/API/actions/workflows/ci.yml)
 
 ### 🔹 Описание
-Асинхронное REST API, построенное на **FastAPI**, **PostgreSQL** и **Redis**. Проект демонстрирует современный подход к разработке backend-приложений: слоистую архитектуру, JWT-аутентификацию, Redis-кэширование, асинхронную обработку задач, автоматизированное тестирование и CI.
+
+Асинхронное REST API, построенное на **FastAPI**, **PostgreSQL** и **Redis**. Проект реализует backend-сервис для хранения и управления GIF-файлами с использованием слоистой архитектуры, JWT-аутентификации, Redis-кэширования, фоновых задач, автоматизированного тестирования и CI.
 
 ---
 
@@ -16,6 +17,85 @@
 - **Package Manager:** `uv`
 - **Testing:** pytest, Testcontainers
 - **CI/CD & DevOps:** GitHub Actions, Docker, Docker Compose
+
+---
+
+### 🎬 Демо
+
+<details>
+  <summary><b>Веб-интерфейс</b></summary>
+    <p align="center">
+      <img src=".github/assets/popular_page_demo.gif" width="49%" alt="Popular page">
+      <img src=".github/assets/add_new_gif_demo.gif" width="49%" alt="Adding new gif">
+    </p>
+</details>
+
+<details>
+  <summary><b>Документация</b></summary>
+    <p align="center">
+      <img src=".github/assets/swagger.gif" width="80%" alt="Swagger docs">
+    </p>
+</details>
+
+---
+
+### 🏗 Архитектура
+
+<details open>
+  <summary><b>Архитектурная Mermaid-схема</b></summary>
+
+```mermaid
+flowchart LR
+    Client["Web Interface"] --> API["FastAPI"]
+    Bot["Telegram Bot"] --> API
+
+    API --> Services["Services"]
+
+    Cache[(Redis)]
+    Repo["Repositories"] --> DB[(PostgreSQL)]
+
+    Services -->|Get / Set| Cache
+    Services -->|Cache miss| Repo
+
+    Tasks["Background Tasks"] -->|Pre-compute| Cache
+```
+
+</details>
+
+<details>
+  <summary><b>ER-диаграмма</b></summary>
+
+```mermaid
+erDiagram
+
+    USERS {
+        int id PK
+        bigint tg_id UK
+    }
+
+    GIFS {
+        int id PK
+        string file_path UK
+        string file_hash UK
+    }
+
+    TAGS {
+        int id PK
+        string tag UK
+    }
+
+    USER_GIF_TAGS {
+        int user_id PK, FK
+        int gif_id PK, FK
+        int tag_id PK, FK
+    }
+
+    USERS ||--o{ USER_GIF_TAGS : ""
+    GIFS ||--o{ USER_GIF_TAGS : ""
+    TAGS ||--o{ USER_GIF_TAGS : ""
+```
+
+</details>
 
 ---
 
@@ -33,26 +113,31 @@
 - 🛡 **Обработка ошибок:** Централизованные Exception Handlers с единым форматом ответов API.
 - 🛠 **Современный toolchain:** Управление зависимостями через `uv`, контейнеризация с Docker и автоматическая проверка проекта в GitHub Actions.
 - 🧪 **Автоматизированное тестирование:** 173 асинхронных теста (Unit, Integration, Repository) с использованием `testcontainers`, автоматически поднимающих изолированные экземпляры PostgreSQL и Redis во время выполнения `pytest`.
+
+ --- 
  
 ### 📦 Структура проекта
 
 ```text
-├── alembic/                # Миграции базы данных
-├── app/                    # Основной код приложения
-│   ├── api/                # Эндпоинты, middleware, зависимости и handlers
-│   │   └── v1/routers/     # Маршруты API (web/, bot/, dev/ и глобальные пути)
-│   ├── core/               # Настройки (Pydantic Settings), DB, Redis, Lifespan
-│   ├── repositories/       # Слой работы с БД (SQLAlchemy)
-│   ├── services/           # Бизнес-логика приложения
-│   ├── tasks/              # Асинхронные фоновые задачи
-│   └── utils/              # Хелперы для Auth, Redis и SQLAlchemy
-├── envs/                   # Файлы окружения (.env)
-├── tests/                  # Тестовый suite (unit, integration, repos, services)
-├── .github/workflows/      # CI пайплайны GitHub Actions
-├── Dockerfile              # Сборка образа приложения
-├── docker-compose.yml      # Развёртывание (Postgres + Redis → Migration → App → Nginx)
-├── nginx.conf              # Конфигурация Nginx Reverse Proxy
-└── pyproject.toml          # Зависимости проекта
+├── .github/
+│   ├── assets/              # GIF/MP4 для демонстрации в README
+│   └── workflows/           # CI пайплайны GitHub Actions
+├── backend/
+│   ├── alembic/             # Миграции базы данных
+│   ├── app/                 # Основной код приложения
+│   │   ├── api/             # Эндпоинты, middleware, зависимости и handlers
+│   │   ├── core/            # Settings, DB, Redis, Lifespan, Logging
+│   │   ├── repositories/    # Слой работы с БД (SQLAlchemy)
+│   │   ├── services/        # Бизнес-логика приложения
+│   │   ├── tasks/           # Асинхронные фоновые задачи
+│   │   └── utils/           # Вспомогательные модули
+│   ├── tests/               # Unit, Integration и Repository тесты
+│   ├── Dockerfile           # Сборка backend-контейнера
+│   └── pyproject.toml       # Зависимости и настройки проекта
+├── frontend/                # Web-интерфейс (Vite + Nginx)
+├── envs/                    # Файлы окружения (.env)
+├── docker-compose.yml       # Postgres + Redis → Migration → Backend → Frontend
+└── README.md
 ```
 
 ---
@@ -63,17 +148,17 @@
 ```bash
 git clone https://github.com/EgorBP/API.git
 cd API
-````
+```
 
 ### 2. Настройка окружения
 ```bash
-cp envs/.env.example envs/.env
+cp envs/.env.example .env
 cp envs/.env.docker.example envs/.env.docker
 ```
-> DEV_MODE позволяет создавать JWT токены через отдельный эндпоинт для любого Telegram ID пользователя.   
-> Для тестов DEV_MODE всегда false.
+> `DEV_MODE` позволяет создавать JWT токены через отдельный эндпоинт для любого Telegram ID пользователя и уменьшает время кеширования и вызова фоновых задач.   
+> Для тестов `DEV_MODE` всегда false.
 > 
-> Для использования настоящей аутентификации через Telegram создайте своего бота в [@BotFather](https://telegram.me/BotFather), замените BOT_TOKEN на ваш токен и задайте адрес вашего сайта в [@BotFather](https://telegram.me/BotFather) → Login Widget.
+> Для использования настоящей аутентификации через Telegram создайте своего бота в [`@BotFather`](https://telegram.me/BotFather), замените `BOT_TOKEN` на ваш токен и `BOT_NAME` на имя бота, затем задайте адрес вашего сайта в [`@BotFather`](https://telegram.me/BotFather) → `Login Widget`.
 
 ### 3. 🐳 Docker Compose
 ```bash
@@ -85,11 +170,12 @@ docker compose up --build
 > Swagger UI: [`http://127.0.0.1:8000/docs`](http://127.0.0.1:8000/docs)    
 > ReDoc: [`http://127.0.0.1:8000/redoc`](http://127.0.0.1:8000/redoc)   
 
+---
 
 ## 🧪 Тестирование
 
 Проект содержит **173 асинхронных теста** (Unit, Integration, Repositories).   
-Для запуска необходим работающий Docker.
+Для запуска необходим работающий Docker. 
 
 ```bash
 uv run pytest
