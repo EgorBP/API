@@ -134,7 +134,7 @@ erDiagram
 │   ├── tests/               # Unit, Integration и Repository тесты
 │   ├── Dockerfile           # Сборка backend-контейнера
 │   └── pyproject.toml       # Зависимости и настройки проекта
-├── frontend/                # Web-интерфейс (Vite + Nginx)
+├── frontend/                # Web-интерфейс (React + Vite + Nginx)
 ├── envs/                    # Файлы окружения (.env)
 ├── docker-compose.yml       # Postgres + Redis → Migration → Backend → Frontend
 └── README.md
